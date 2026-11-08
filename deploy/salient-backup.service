@@ -1,0 +1,11 @@
+# One database backup, run nightly by salient-backup.timer.
+[Unit]
+Description=Back up the Salient database
+
+[Service]
+Type=oneshot
+User=salient
+Group=salient
+WorkingDirectory=/opt/salient
+EnvironmentFile=/opt/salient/.env
+ExecStart=/opt/salient/node_modules/.bin/tsx scripts/backup-db.ts

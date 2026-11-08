@@ -1,0 +1,79 @@
+// Tables. Games are stored as an event log: `game_actions` is the source of
+// truth and the game state is rebuilt by replaying it. The summary columns on
+// `games` (status, round, phase, winner) exist only so the lobby can list games
+// without replaying each one, and are recomputed from the replay on every
+// write, never updated in place.
+import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+
+export const users = sqliteTable("users", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  email: text("email").notNull().unique(),
+  displayName: text("display_name").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  theme: text("theme", { enum: ["auto", "light", "dark"] }).notNull().default("auto"),
+  failedLogins: integer("failed_logins").notNull().default(0),
+  lockedAt: integer("locked_at"),
+  /** A computer opponent. Can never sign in; plays through src/game/bot.ts. */
+  isBot: integer("is_bot", { mode: "boolean" }).notNull().default(false),
+  createdAt: integer("created_at").notNull(),
+});
+
+export const sessions = sqliteTable(
+  "sessions",
+  {
+    /** sha256 of the cookie token, so a leaked database cannot be replayed as sessions. */
+    id: text("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+  },
+  (t) => [index("sessions_user").on(t.userId)],
+);
+
+export const games = sqliteTable("games", {
+  id: text("id").primaryKey(),
+  mapId: text("map_id").notNull(),
+  seatCount: integer("seat_count").notNull(),
+  /** Seeds every die roll; see src/game/rng.ts. */
+  seed: text("seed").notNull(),
+  createdBy: integer("created_by").notNull().references(() => users.id),
+  createdAt: integer("created_at").notNull(),
+  startedAt: integer("started_at"),
+  // Derived summary, rebuilt from the action log on every write.
+  status: text("status", { enum: ["open", "active", "over"] }).notNull().default("open"),
+  round: integer("round").notNull().default(1),
+  phase: text("phase").notNull().default("planning"),
+  winnerSeat: integer("winner_seat"),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export const gamePlayers = sqliteTable(
+  "game_players",
+  {
+    gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
+    seat: integer("seat").notNull(),
+    userId: integer("user_id").notNull().references(() => users.id),
+    joinedAt: integer("joined_at").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.gameId, t.seat] }), uniqueIndex("game_players_user").on(t.gameId, t.userId)],
+);
+
+export const gameActions = sqliteTable(
+  "game_actions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    gameId: text("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
+    /** 0-based position in this game's log. Also picks the action's dice stream. */
+    seq: integer("seq").notNull(),
+    seat: integer("seat").notNull(),
+    userId: integer("user_id").notNull().references(() => users.id),
+    /** The Action, as JSON. */
+    payload: text("payload").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [uniqueIndex("game_actions_seq").on(t.gameId, t.seq)],
+);
+
+export type User = typeof users.$inferSelect;
+export type Game = typeof games.$inferSelect;
+export type GamePlayer = typeof gamePlayers.$inferSelect;

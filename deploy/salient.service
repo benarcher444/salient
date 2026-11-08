@@ -1,0 +1,26 @@
+[Unit]
+Description=Salient (turn-based tactics game)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=salient
+Group=salient
+WorkingDirectory=/opt/salient
+EnvironmentFile=/opt/salient/.env
+Environment=NODE_ENV=production
+ExecStart=/opt/salient/node_modules/.bin/tsx src/server.ts
+Restart=on-failure
+RestartSec=3
+
+# Hardening. The app only ever writes its own data directory, so everything
+# else is read-only to it, and it cannot gain privileges.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/salient/data
+
+[Install]
+WantedBy=multi-user.target

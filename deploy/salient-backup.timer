@@ -1,0 +1,10 @@
+# 03:40 server time. Persistent: if the server was off then, it runs at boot instead.
+[Unit]
+Description=Nightly Salient database backup
+
+[Timer]
+OnCalendar=*-*-* 03:40:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,505 @@
+// The round structure: planning (everyone orders at once), movement (resolved
+// together), attacks (taken in turn), then upkeep. `applyAction` is the only
+// way the state changes, and it is deterministic given the roll function, so
+// a game is fully described by its seed and its list of actions.
+import { RULES } from "./constants.js";
+import { previewShot, rollShot } from "./combat.js";
+import { facingToward, samePoint } from "./grid.js";
+import { getMap } from "./maps.js";
+import { validatePath } from "./movement.js";
+import { UNITS, UNIT_KINDS, hasTrait } from "./units.js";
+import { isSpawnTile, unitVisibleTo, visibleTiles } from "./visibility.js";
+import {
+  RuleError,
+  type Action,
+  type Facing,
+  type GameEvent,
+  type GameState,
+  type MapDef,
+  type MoveOrder,
+  type Orders,
+  type Point,
+  type Seat,
+  type Unit,
+} from "./types.js";
+
+export function newGame(mapId: string, seatCount: number): GameState {
+  const map = getMap(mapId);
+  if (seatCount < 2 || seatCount > map.seats) throw new Error(`${map.name} takes 2 to ${map.seats} players`);
+  return {
+    mapId,
+    seatCount,
+    round: 1,
+    phase: "planning",
+    seats: Array.from({ length: seatCount }, (_, seat) => ({
+      seat,
+      gold: RULES.startGold,
+      tickets: RULES.startTickets,
+      eliminated: false,
+    })),
+    units: [],
+    nextUnitId: 1,
+    postOwners: map.posts.map(() => null),
+    incomeOwners: map.income.map(() => null),
+    orders: Array.from({ length: seatCount }, () => null),
+    attackTurn: null,
+    actedUnitIds: [],
+    winner: null,
+  };
+}
+
+export interface Applied {
+  state: GameState;
+  events: GameEvent[];
+}
+
+/** Apply one action to a copy of the state. Throws RuleError if it is not allowed. */
+export function applyAction(prev: GameState, action: Action, roll: () => number): Applied {
+  const state = structuredClone(prev);
+  const map = getMap(state.mapId);
+  const events: GameEvent[] = [];
+  if (state.phase === "over") throw new RuleError("game_over");
+  const seat = state.seats[action.seat];
+  if (!seat) throw new RuleError("not_your_unit", `no seat ${action.seat}`);
+  if (seat.eliminated) throw new RuleError("eliminated");
+
+  switch (action.type) {
+    case "orders":
+      submitOrders(map, state, action.seat, action.orders, events);
+      break;
+    case "attack":
+      attack(map, state, action.seat, action.unitId, action.targetId, roll, events);
+      break;
+    case "hold": {
+      requireAttackTurn(state, action.seat);
+      const unit = ownUnit(state, action.seat, action.unitId);
+      if (state.actedUnitIds.includes(unit.id)) throw new RuleError("already_acted");
+      state.actedUnitIds.push(unit.id);
+      events.push({ type: "hold", unitId: unit.id, seat: action.seat });
+      passAttackTurn(map, state, action.seat, events);
+      break;
+    }
+    case "endAttacks":
+      requireAttackTurn(state, action.seat);
+      for (const u of state.units) if (u.seat === action.seat && !state.actedUnitIds.includes(u.id)) state.actedUnitIds.push(u.id);
+      passAttackTurn(map, state, action.seat, events);
+      break;
+    case "resign":
+      seat.tickets = 0;
+      eliminate(state, action.seat, events);
+      if (!checkWinner(state, events)) {
+        if (state.phase === "planning") maybeResolvePlanning(map, state, events);
+        else if (state.phase === "attack") {
+          // Their units are gone, so whoever was due to shoot may have lost
+          // every target. Re-pick the attacker rather than leave them stuck.
+          const current = state.attackTurn;
+          if (current === null || current === action.seat || readyShooters(map, state, current).length === 0) {
+            passAttackTurn(map, state, current ?? action.seat, events);
+          }
+        }
+      }
+      break;
+  }
+  return { state, events };
+}
+
+// --- Planning --------------------------------------------------------------
+
+function submitOrders(map: MapDef, state: GameState, seat: Seat, orders: Orders, events: GameEvent[]) {
+  if (state.phase !== "planning") throw new RuleError("wrong_phase");
+  validateOrders(map, state, seat, orders);
+  // Re-submitting before everyone is in replaces the earlier orders.
+  state.orders[seat] = structuredClone(orders);
+  maybeResolvePlanning(map, state, events);
+}
+
+/** Every check a submitted set of orders must pass. Exported so the browser can pre-check. */
+export function validateOrders(map: MapDef, state: GameState, seat: Seat, orders: Orders): void {
+  const seen = new Set<number>();
+  const byUnit = new Map<number, MoveOrder>();
+  for (const m of orders.moves) {
+    if (seen.has(m.unitId)) throw new RuleError("duplicate_order");
+    seen.add(m.unitId);
+    const unit = ownUnit(state, seat, m.unitId);
+    const verdict = validatePath(map, unit, m.path);
+    if (verdict !== "ok") throw new RuleError(verdict, `unit ${unit.id}`);
+    byUnit.set(unit.id, m);
+  }
+
+  // Where each of this seat's units will try to finish. Two may not aim for
+  // the same tile, and nobody may plan to end on a teammate who is staying put.
+  const destinations = new Set<string>();
+  for (const u of state.units) {
+    if (u.seat !== seat) continue;
+    const order = byUnit.get(u.id);
+    const end = order && order.path.length > 0 ? order.path[order.path.length - 1]! : u;
+    const k = `${end.x},${end.y}`;
+    if (destinations.has(k)) throw new RuleError("duplicate_destination");
+    destinations.add(k);
+  }
+
+  let cost = 0;
+  const spawnTilesUsed = new Set<string>();
+  for (const s of orders.spawns) {
+    if (!UNIT_KINDS.includes(s.kind)) throw new RuleError("bad_spawn_tile", `kind ${s.kind}`);
+    if (!isSpawnTile(map, state, seat, s)) throw new RuleError("bad_spawn_tile");
+    const k = `${s.x},${s.y}`;
+    if (spawnTilesUsed.has(k) || destinations.has(k)) throw new RuleError("spawn_tile_occupied");
+    // A teammate standing there now is in the way even if it is ordered off:
+    // spawns land before anyone moves.
+    if (state.units.some((u) => u.seat === seat && u.x === s.x && u.y === s.y)) throw new RuleError("spawn_tile_occupied");
+    spawnTilesUsed.add(k);
+    cost += UNITS[s.kind].cost;
+  }
+  if (cost > state.seats[seat]!.gold) throw new RuleError("not_enough_gold");
+}
+
+function maybeResolvePlanning(map: MapDef, state: GameState, events: GameEvent[]) {
+  const waiting = state.seats.some((s) => !s.eliminated && state.orders[s.seat] === null);
+  if (waiting) return;
+  resolveSpawns(state, events);
+  resolveMoves(map, state, events);
+  state.phase = "attack";
+  state.actedUnitIds = [];
+  events.push({ type: "phase", phase: "attack" });
+  state.attackTurn = nextAttacker(map, state, null);
+  if (state.attackTurn === null) endRound(map, state, events);
+}
+
+function resolveSpawns(state: GameState, events: GameEvent[]) {
+  for (const seatState of state.seats) {
+    const orders = state.orders[seatState.seat];
+    if (!orders || seatState.eliminated) continue;
+    for (const s of orders.spawns) {
+      const cost = UNITS[s.kind].cost;
+      // Checked again at resolution: an enemy may have been standing on the
+      // tile all along, unseen. Nothing is charged for a failed deployment.
+      const blocked = state.units.some((u) => u.x === s.x && u.y === s.y);
+      if (blocked || cost > seatState.gold) {
+        events.push({ type: "spawnFailed", seat: seatState.seat, kind: s.kind, x: s.x, y: s.y, refund: cost });
+        continue;
+      }
+      seatState.gold -= cost;
+      const unit: Unit = {
+        id: state.nextUnitId++,
+        seat: seatState.seat,
+        kind: s.kind,
+        x: s.x,
+        y: s.y,
+        facing: s.facing,
+        hp: UNITS[s.kind].hp,
+        moved: false,
+        damaged: false,
+      };
+      state.units.push(unit);
+      events.push({ type: "spawn", unit: { ...unit } });
+    }
+  }
+}
+
+/**
+ * Everyone moves at once, one step per tick. In each tick a unit's step is
+ * refused if another unit wants the same tile, if two units would swap
+ * places, or if the tile ahead is held by a unit that is not itself moving
+ * on. A refused unit stops where it is for the rest of the round, turned
+ * towards where it was going — that is how you find an enemy you could not
+ * see. Because the rule only looks at the current tick, the result does not
+ * depend on the order units are listed in.
+ */
+function resolveMoves(map: MapDef, state: GameState, events: GameEvent[]) {
+  const orders = new Map<number, MoveOrder>();
+  for (const o of state.orders) for (const m of o?.moves ?? []) orders.set(m.unitId, m);
+
+  interface Mover {
+    unit: Unit;
+    path: Point[];
+    from: Point;
+    taken: Point[];
+    active: boolean;
+    bumped: boolean;
+  }
+  const movers: Mover[] = [];
+  for (const unit of state.units) {
+    const order = orders.get(unit.id);
+    if (!order) continue;
+    movers.push({ unit, path: order.path, from: { x: unit.x, y: unit.y }, taken: [], active: order.path.length > 0, bumped: false });
+  }
+
+  const longest = Math.max(0, ...movers.map((m) => m.path.length));
+  for (let t = 0; t < longest; t++) {
+    const stepping = movers.filter((m) => m.active && t < m.path.length);
+    if (stepping.length === 0) break;
+    const occupant = new Map<string, Unit>();
+    for (const u of state.units) occupant.set(`${u.x},${u.y}`, u);
+    const want = new Map<Mover, Point>();
+    for (const m of stepping) want.set(m, m.path[t]!);
+
+    const refused = new Set<Mover>();
+    const wantCount = new Map<string, number>();
+    for (const p of want.values()) wantCount.set(`${p.x},${p.y}`, (wantCount.get(`${p.x},${p.y}`) ?? 0) + 1);
+    for (const [m, p] of want) {
+      if ((wantCount.get(`${p.x},${p.y}`) ?? 0) > 1) refused.add(m);
+      const other = occupant.get(`${p.x},${p.y}`);
+      const otherMover = other ? stepping.find((s) => s.unit === other) : undefined;
+      if (otherMover && samePoint(want.get(otherMover)!, m.unit)) refused.add(m); // a swap
+    }
+    // A step into an occupied tile is fine only if its occupant is stepping
+    // out this same tick. Refusals cascade back down a queue, so repeat until
+    // nothing changes.
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const [m, p] of want) {
+        if (refused.has(m)) continue;
+        const other = occupant.get(`${p.x},${p.y}`);
+        if (!other) continue;
+        const otherMover = stepping.find((s) => s.unit === other);
+        if (!otherMover || refused.has(otherMover)) {
+          refused.add(m);
+          changed = true;
+        }
+      }
+    }
+
+    for (const [m, p] of want) {
+      if (refused.has(m)) {
+        m.active = false;
+        m.bumped = true;
+        m.unit.facing = facingToward(m.unit, p);
+      } else {
+        m.unit.facing = facingToward(m.unit, p);
+        m.unit.x = p.x;
+        m.unit.y = p.y;
+        m.unit.moved = true;
+        m.taken.push({ ...p });
+      }
+    }
+  }
+
+  for (const m of movers) {
+    const order = orders.get(m.unit.id)!;
+    if (!m.bumped) m.unit.facing = order.facing;
+    if (m.taken.length > 0 || m.bumped || order.path.length === 0) {
+      events.push({ type: "move", unitId: m.unit.id, seat: m.unit.seat, from: m.from, steps: m.taken, bumped: m.bumped });
+    }
+  }
+}
+
+// --- Attacks ---------------------------------------------------------------
+
+/** Seats in the order they take attack turns this round. The lead rotates every round. */
+export function initiativeOrder(state: GameState): Seat[] {
+  const order: Seat[] = [];
+  for (let i = 0; i < state.seatCount; i++) {
+    const s = (state.round - 1 + i) % state.seatCount;
+    if (!state.seats[s]!.eliminated) order.push(s);
+  }
+  return order;
+}
+
+/** Enemies this unit could shoot right now. */
+export function targetsFor(map: MapDef, state: GameState, unit: Unit, tiles?: ReadonlySet<number>): Unit[] {
+  const seen = tiles ?? visibleTiles(map, state, unit.seat);
+  return state.units.filter(
+    (t) => t.seat !== unit.seat && unitVisibleTo(map, state, unit.seat, t, seen) && previewShot(map, unit, t).possible,
+  );
+}
+
+/** Units of this seat that have not acted and have something to shoot at. */
+export function readyShooters(map: MapDef, state: GameState, seat: Seat): Unit[] {
+  const tiles = visibleTiles(map, state, seat);
+  return state.units.filter(
+    (u) => u.seat === seat && !state.actedUnitIds.includes(u.id) && targetsFor(map, state, u, tiles).length > 0,
+  );
+}
+
+/**
+ * The next seat, after `after` in initiative order, with a unit that can
+ * shoot. Seats with nothing to shoot at are skipped rather than made to pass
+ * by hand. null when nobody can shoot: the attack phase is over.
+ */
+function nextAttacker(map: MapDef, state: GameState, after: Seat | null): Seat | null {
+  const order = initiativeOrder(state);
+  if (order.length === 0) return null;
+  const start = after === null ? 0 : order.indexOf(after) + 1;
+  for (let i = 0; i < order.length; i++) {
+    const s = order[(start + i) % order.length]!;
+    if (readyShooters(map, state, s).length > 0) return s;
+  }
+  return null;
+}
+
+function requireAttackTurn(state: GameState, seat: Seat) {
+  if (state.phase !== "attack") throw new RuleError("wrong_phase");
+  if (state.attackTurn !== seat) throw new RuleError("not_your_turn");
+}
+
+function ownUnit(state: GameState, seat: Seat, unitId: number): Unit {
+  const unit = state.units.find((u) => u.id === unitId);
+  if (!unit) throw new RuleError("no_such_unit");
+  if (unit.seat !== seat) throw new RuleError("not_your_unit");
+  return unit;
+}
+
+function attack(
+  map: MapDef,
+  state: GameState,
+  seat: Seat,
+  unitId: number,
+  targetId: number,
+  roll: () => number,
+  events: GameEvent[],
+) {
+  requireAttackTurn(state, seat);
+  const shooter = ownUnit(state, seat, unitId);
+  if (state.actedUnitIds.includes(shooter.id)) throw new RuleError("already_acted");
+  const target = state.units.find((u) => u.id === targetId);
+  if (!target) throw new RuleError("no_such_unit");
+  if (!targetsFor(map, state, shooter).includes(target)) throw new RuleError("cannot_shoot");
+
+  const preview = previewShot(map, shooter, target);
+  const result = rollShot(preview, roll());
+  state.actedUnitIds.push(shooter.id);
+  let killed = false;
+  if (result.hit) {
+    target.hp -= result.damage;
+    target.damaged = true;
+    if (target.hp <= 0) {
+      killed = true;
+      state.units = state.units.filter((u) => u.id !== target.id);
+      state.seats[target.seat]!.tickets -= RULES.ticketsPerDeath;
+    }
+  }
+  events.push({
+    type: "shot",
+    shooterId: shooter.id,
+    targetId: target.id,
+    shooterSeat: shooter.seat,
+    targetSeat: target.seat,
+    from: { x: shooter.x, y: shooter.y },
+    to: { x: target.x, y: target.y },
+    chance: preview.chance,
+    hit: result.hit,
+    crit: result.crit,
+    damage: result.damage,
+    killed,
+  });
+  if (killed && state.seats[target.seat]!.tickets <= 0) {
+    eliminate(state, target.seat, events);
+    if (checkWinner(state, events)) return;
+  }
+  passAttackTurn(map, state, seat, events);
+}
+
+function passAttackTurn(map: MapDef, state: GameState, seat: Seat, events: GameEvent[]) {
+  state.attackTurn = nextAttacker(map, state, seat);
+  if (state.attackTurn === null) endRound(map, state, events);
+}
+
+// --- Upkeep ----------------------------------------------------------------
+
+function endRound(map: MapDef, state: GameState, events: GameEvent[]) {
+  const unitAt = (p: Point) => state.units.find((u) => u.x === p.x && u.y === p.y);
+
+  // Captures. Standing on a site you do not own takes it one step towards
+  // you: an enemy's becomes neutral, a neutral one becomes yours.
+  map.posts.forEach((p, i) => {
+    const u = unitAt(p);
+    if (!u) return;
+    const owner = state.postOwners[i] ?? null;
+    if (owner === u.seat) return;
+    const next = owner === null ? u.seat : null;
+    state.postOwners[i] = next;
+    events.push({ type: "capture", site: "post", index: i, from: owner, to: next });
+  });
+  map.income.forEach((p, i) => {
+    const u = unitAt(p);
+    if (!u || !hasTrait(u.kind, "engineer")) return;
+    const owner = state.incomeOwners[i] ?? null;
+    if (owner === u.seat) return;
+    const next = owner === null ? u.seat : null;
+    state.incomeOwners[i] = next;
+    events.push({ type: "capture", site: "income", index: i, from: owner, to: next });
+  });
+
+  for (const s of state.seats) {
+    if (s.eliminated) continue;
+    let amount: number = RULES.baseIncome;
+    map.income.forEach((site, i) => {
+      if (state.incomeOwners[i] === s.seat) amount += site.value;
+    });
+    s.gold += amount;
+    events.push({ type: "income", seat: s.seat, amount });
+  }
+
+  // Healing reads the damage flags before they are reset below.
+  for (const u of state.units) {
+    const max = UNITS[u.kind].hp;
+    let heal = u.damaged ? 0 : RULES.healPerRound;
+    const medicNearby = state.units.some(
+      (m) => m !== u && m.seat === u.seat && hasTrait(m.kind, "medic") && Math.max(Math.abs(m.x - u.x), Math.abs(m.y - u.y)) <= 1,
+    );
+    if (medicNearby) heal += RULES.medicHeal;
+    u.hp = Math.min(max, u.hp + heal);
+  }
+
+  const held = (seat: Seat) => state.postOwners.filter((o) => o === seat).length;
+  const alive = state.seats.filter((s) => !s.eliminated);
+  for (const s of alive) {
+    const strongest = Math.max(0, ...alive.filter((o) => o.seat !== s.seat).map((o) => held(o.seat)));
+    const behind = strongest - held(s.seat);
+    if (behind > 0) {
+      const lost = behind * RULES.bleedPerPost;
+      s.tickets -= lost;
+      events.push({ type: "bleed", seat: s.seat, tickets: lost });
+    }
+  }
+  for (const s of alive) if (s.tickets <= 0) eliminate(state, s.seat, events);
+  if (checkWinner(state, events)) return;
+
+  if (state.round >= RULES.roundLimit) {
+    const standing = state.seats.filter((s) => !s.eliminated);
+    const best = Math.max(...standing.map((s) => s.tickets));
+    const leaders = standing.filter((s) => s.tickets === best);
+    finish(state, leaders.length === 1 ? leaders[0]!.seat : null, events);
+    return;
+  }
+
+  state.round += 1;
+  state.phase = "planning";
+  state.orders = state.orders.map(() => null);
+  state.attackTurn = null;
+  state.actedUnitIds = [];
+  for (const u of state.units) {
+    u.moved = false;
+    u.damaged = false;
+  }
+  events.push({ type: "round", round: state.round });
+}
+
+function eliminate(state: GameState, seat: Seat, events: GameEvent[]) {
+  const s = state.seats[seat]!;
+  if (s.eliminated) return;
+  s.eliminated = true;
+  s.tickets = Math.max(0, s.tickets);
+  state.units = state.units.filter((u) => u.seat !== seat);
+  state.orders[seat] = null;
+  events.push({ type: "eliminated", seat });
+}
+
+/** Ends the game if one seat (or none) is left standing. Returns whether it ended. */
+function checkWinner(state: GameState, events: GameEvent[]): boolean {
+  const standing = state.seats.filter((s) => !s.eliminated);
+  if (standing.length > 1) return false;
+  finish(state, standing[0]?.seat ?? null, events);
+  return true;
+}
+
+function finish(state: GameState, winner: Seat | null, events: GameEvent[]) {
+  state.phase = "over";
+  state.winner = winner;
+  state.attackTurn = null;
+  events.push({ type: "gameOver", winner });
+}
+
+export const isFacing = (n: number): n is Facing => Number.isInteger(n) && n >= 0 && n <= 7;

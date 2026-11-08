@@ -1,0 +1,6 @@
+# /etc/caddy/sites/salient.caddy — `common` is defined in the shared Caddyfile.
+salient.91-99-202-188.sslip.io {
+	import common
+	header X-Frame-Options "DENY"
+	reverse_proxy 127.0.0.1:3002
+}
