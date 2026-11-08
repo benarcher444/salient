@@ -210,9 +210,18 @@ the server after `seed`/`unseed`, or it serves games that no longer exist.
 
 ## Deployment
 
-Live at **https://salient.91-99-202-188.sslip.io**, deployed by GitHub
-Actions on every push to `main` (when the `DEPLOY_ENABLED` repository
-variable is `true`). The path is the playbook's, steps 1–7.
+Live at **https://salient.91-99-202-188.sslip.io** since 2026-11-08, first
+deployed by hand. GitHub Actions deploys every push to `main` once the
+`DEPLOY_ENABLED` repository variable is `true`, the deploy key is on the
+server and the repository is public (the server pulls anonymously). The path
+is the playbook's, steps 1–7.
+
+The first install could not clone: the repository was private, so GitHub
+asked the server for a login. It went up as a `git bundle` copied over SSH,
+with `origin` then pointed at GitHub. A bundle has no HEAD, so its clone
+checks nothing out: `git checkout -B main origin/main` afterwards. `npm` puts
+its cache in the app user's home, which is `/opt/salient`, hence `.npm/` and
+`.cache/` in `.gitignore`.
 
 Port register, as read from the server on 2026-11-08 (`ss -tlnp`, the Caddy
 site files, `/opt`). Check again before trusting it, and never touch the

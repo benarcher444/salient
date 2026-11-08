@@ -8,3 +8,5 @@ screenshots/
 __pycache__/
 .spyproject/
 .idea/
+.npm/
+.cache/
