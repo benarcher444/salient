@@ -5,7 +5,8 @@ import { MAPS } from "../game/maps.js";
 import { RULES } from "../game/constants.js";
 import { seatName } from "../game/seats.js";
 import type { GameSummary } from "../games.js";
-import { mapById, mapThumbnail, playerList, seatChip, unitCards } from "./components.js";
+import type { MapDef } from "../game/types.js";
+import { mapThumbnail, playerList, seatChip, unitCards } from "./components.js";
 import { icons } from "./icons.js";
 import { NO_AUTOFILL, esc, layout, pageHead, type Html, type Theme } from "./layout.js";
 
@@ -42,7 +43,7 @@ function statusPill(s: GameSummary): Html {
 }
 
 function gameCard(s: GameSummary, join = false): Html {
-  const map = mapById(s.game.mapId);
+  const map = s.map;
   const players = s.players.map((p) => seatChip(p.seat, p.name)).join("");
   const action = join
     ? `<form method="post" action="/g/${esc(s.game.id)}/join"><button class="btn btn-primary btn-sm" type="submit">Join</button></form>`
@@ -57,10 +58,10 @@ function gameCard(s: GameSummary, join = false): Html {
 </article>`;
 }
 
-export function lobbyPage(user: User, mine: GameSummary[], open: GameSummary[], error?: string): Html {
+export function lobbyPage(user: User, mine: GameSummary[], open: GameSummary[], ownMaps: MapDef[], error?: string): Html {
   const active = mine.filter((s) => s.game.status !== "over");
   const finished = mine.filter((s) => s.game.status === "over");
-  const mapOptions = MAPS.map(
+  const mapOptions = [...MAPS, ...ownMaps].map(
     (m, i) => `<label class="map-option">
   <input type="radio" name="map" value="${esc(m.id)}"${i === 0 ? " checked" : ""} data-seats="${m.seats}">
   <span class="map-option-card">${mapThumbnail(m, false)}<span class="map-option-text"><strong>${esc(m.name)}</strong><small>${m.seats === 2 ? "2 players" : `2–${m.seats} players`} · ${m.width}×${m.height}</small><small class="faint">${esc(m.blurb)}</small></span></span>
@@ -109,7 +110,7 @@ ${error ? `<p class="alert alert-danger" role="alert">${esc(error)}</p>` : ""}
 }
 
 export function waitingRoom(user: User, s: GameSummary, shareUrl: string): Html {
-  const map = mapById(s.game.mapId)!;
+  const map = s.map;
   const isCreator = s.game.createdBy === user.id;
   const body = `${pageHead({ title: map.name, sub: `Waiting for players · ${s.players.length} of ${s.game.seatCount} seats filled` })}
 <div class="waiting">

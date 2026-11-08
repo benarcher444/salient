@@ -26,8 +26,9 @@ function groundOf(map: MapDef, x: number, y: number): "grass" | "road" | "floor"
   return floors >= 2 ? "floor" : "grass";
 }
 
-export function renderMapArt(map: MapDef, pal: Palette): HTMLCanvasElement {
-  const T = ART_PX;
+/** `px` pixels per tile: the editor draws smaller, since it redraws on every stroke. */
+export function renderMapArt(map: MapDef, pal: Palette, px = ART_PX): HTMLCanvasElement {
+  const T = px;
   const canvas = document.createElement("canvas");
   canvas.width = map.width * T;
   canvas.height = map.height * T;

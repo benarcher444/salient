@@ -23,10 +23,11 @@ export type Html = string;
 const themeAttr = (t: Theme) => (t === "auto" ? "" : ` data-theme="${t}"`);
 const scheme = (t: Theme) => (t === "auto" ? "light dark" : t);
 
-type NavKey = "games" | "rules" | "settings";
+type NavKey = "games" | "maps" | "rules" | "settings";
 
 const NAV: { key: NavKey; href: string; label: string; icon: string }[] = [
   { key: "games", href: "/", label: "Games", icon: icons.flag },
+  { key: "maps", href: "/maps", label: "Maps", icon: icons.map },
   { key: "rules", href: "/how-to-play", label: "How to play", icon: icons.book },
   { key: "settings", href: "/settings", label: "Settings", icon: icons.gear },
 ];

@@ -12,13 +12,14 @@
     "test:flow": "tsx scripts/test-flow.ts",
     "audit:mobile": "tsx scripts/audit-mobile.ts",
     "shot": "tsx scripts/shot.ts",
-    "test:all": "npm run typecheck && npm test && npm run test:flow && npm run audit:mobile && npm run shot",
+    "test:all": "npm run typecheck && npm test && npm run test:flow && npm run test:editor && npm run audit:mobile && npm run shot",
     "seed": "tsx scripts/seed.ts",
     "unseed": "tsx scripts/unseed.ts",
     "set-password": "tsx scripts/set-password.ts",
     "unlock": "tsx scripts/unlock.ts",
     "backup": "tsx scripts/backup-db.ts",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "test:editor": "tsx scripts/test-editor.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.5",

@@ -173,6 +173,9 @@
 /* --- Base ------------------------------------------------------------------ */
 
 *, *::before, *::after { box-sizing: border-box; }
+/* Components set their own display (flex, grid), which beats the browser's
+   own [hidden] rule; without this, hiding a tooltip or a button did nothing. */
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
@@ -487,4 +490,59 @@ body.bare { height: 100dvh; overflow: hidden; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+
+/* --- Maps and the editor ------------------------------------------------------------- */
+
+.map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.map-card { overflow: hidden; display: flex; flex-direction: column; }
+.map-card-thumb { display: block; background: var(--board-bg); padding: 12px; border-bottom: 1px solid var(--border); }
+.map-card-thumb .map-thumb { width: 100%; height: 150px; }
+.map-card-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+
+.editor-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.editor-actions form { display: contents; }
+.editor-panel .panel-section { gap: 8px; }
+.tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+.tool { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 9px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; font-size: 0.86rem; font-weight: 600; cursor: pointer; text-align: left; min-width: 0; }
+.tool span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool:hover { border-color: var(--border-strong); background: var(--surface); }
+.tool[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-border); background: var(--surface); }
+.swatch { width: 18px; height: 18px; border-radius: 5px; flex: none; border: 1px solid rgb(0 0 0 / 0.18); }
+.sw-grass { background: var(--t-grass); }
+.sw-road { background: var(--t-road); }
+.sw-floor { background: repeating-linear-gradient(0deg, var(--t-floor) 0 4px, color-mix(in srgb, var(--t-floor) 80%, black) 4px 5px); }
+.sw-forest { background: radial-gradient(circle at 35% 35%, color-mix(in srgb, var(--t-forest) 70%, white), var(--t-forest)); border-radius: 50%; }
+.sw-rock { background: linear-gradient(135deg, color-mix(in srgb, var(--t-rock) 70%, white), color-mix(in srgb, var(--t-rock) 75%, black)); }
+.sw-water { background: var(--t-water); }
+.sw-crate { background: var(--t-crate); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--t-crate) 60%, black); }
+.sw-building { background: var(--t-floor); box-shadow: inset 0 0 0 3px var(--text); }
+.sw-wall { border: 0; background: linear-gradient(transparent 38%, var(--text) 38% 62%, transparent 62%); }
+.sw-window { border: 0; background: linear-gradient(90deg, var(--text) 0 22%, var(--t-window) 22% 78%, var(--text) 78%) 0 50% / 100% 26% no-repeat; }
+.sw-door { border: 0; background: linear-gradient(90deg, var(--text) 0 18%, var(--t-door) 18% 82%, var(--text) 82%) 0 50% / 100% 22% no-repeat; }
+.sw-clear { border: 1.5px dashed var(--text-faint); background: transparent; }
+.sw-base { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--seat-0) 35%, transparent) 0 3px, transparent 3px 6px); border-color: var(--seat-0); }
+.sw-post { border-radius: 50%; background: var(--board-paper); box-shadow: inset 0 0 0 3px var(--site-post); }
+.sw-income { background: var(--site-income); transform: rotate(45deg) scale(0.8); }
+.seat-picks { display: flex; gap: 6px; opacity: 0.55; transition: opacity 0.15s; }
+.seat-picks.active { opacity: 1; }
+.seat-pick { --seat: var(--text-faint); display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; font-weight: 700; font-size: 0.85rem; cursor: pointer; }
+.seat-pick[aria-pressed="true"] { border-color: var(--seat); box-shadow: 0 0 0 2px color-mix(in srgb, var(--seat) 40%, transparent); background: color-mix(in srgb, var(--seat) 12%, var(--surface)); }
+.segmented.compact span { min-height: 36px; font-size: 0.85rem; }
+.segmented.three { grid-template-columns: repeat(3, 1fr); }
+.segmented input:disabled + span { opacity: 0.4; cursor: not-allowed; }
+.field-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.problem-list { margin: 0; padding-left: 1.1em; display: grid; gap: 5px; font-size: 0.85rem; color: var(--warn); }
+.danger-zone summary { list-style: none; }
+.danger-zone summary::-webkit-details-marker { display: none; }
+.confirm-row { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding-top: 8px; }
+
+@media (max-width: 860px) {
+  .editor .battle-title { flex: 1; }
+  .editor-actions .btn span { display: none; }
+  .editor-actions #play span { display: inline; }
+  .tools { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tool { min-height: 44px; }
+  .seat-pick { min-height: 44px; }
+  .segmented.compact span { min-height: 44px; }
 }

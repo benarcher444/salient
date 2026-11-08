@@ -1,15 +1,16 @@
 // The battle page: a canvas and a side panel, both driven by public/build/game.js.
 import type { User } from "../db/schema.js";
 import type { LiveGame } from "../games.js";
-import { mapById } from "./components.js";
 import { icons } from "./icons.js";
 import { esc, jsonScript, layout, type Html } from "./layout.js";
 
 export function battlePage(user: User, live: LiveGame, seat: number | null): Html {
-  const map = mapById(live.game.mapId)!;
+  const map = live.map;
   const boot = {
     gameId: live.game.id,
-    mapId: live.game.mapId,
+    mapId: map.id,
+    // The game's own map snapshot: custom maps are not in the browser bundle.
+    map,
     seat,
     players: live.players.map((p) => ({ seat: p.seat, name: p.name })),
   };

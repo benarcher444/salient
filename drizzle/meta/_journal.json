@@ -15,6 +15,13 @@
       "when": 1794175602372,
       "tag": "0001_bots",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794177166315,
+      "tag": "0002_custom_maps",
+      "breakpoints": true
     }
   ]
 }

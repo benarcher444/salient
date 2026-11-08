@@ -21,6 +21,10 @@ interface SalientHooks {
   spawnTiles(): { x: number; y: number }[];
 }
 
+interface SalientEditorHooks {
+  screenOf(x: number, y: number, fx?: number, fy?: number): { x: number; y: number };
+}
+
 interface Shot {
   key: string;
   path: string | ((page: Page) => Promise<string>);
@@ -100,6 +104,24 @@ const SHOTS: Shot[] = [
     },
   },
   { key: "battle-sam", path: battleUrl, account: "sam@demo.local", prepare: waitForBoard },
+  { key: "maps", path: "/maps", account: "alex@demo.local" },
+  {
+    key: "editor",
+    path: async (page) => {
+      await page.goto(`${BASE}/maps`);
+      return (await page.locator('.map-card a.btn:has-text("Edit")').first().getAttribute("href")) ?? "/maps";
+    },
+    account: "alex@demo.local",
+    prepare: async (page) => {
+      await page.waitForFunction(() => "__editor" in window, null, { timeout: 10_000 });
+      // Pick the wall tool and hover an edge, so the cursor and its mirror show.
+      await page.click('[data-tool="wall"]');
+      const p = await page.evaluate(() => (window as unknown as { __editor: SalientEditorHooks }).__editor.screenOf(6, 5, 0.5, 0.05));
+      await page.mouse.move(p.x - 20, p.y - 10, { steps: 1 });
+      await page.mouse.move(p.x, p.y, { steps: 4 });
+      await page.waitForTimeout(250);
+    },
+  },
 ];
 
 fs.mkdirSync("screenshots", { recursive: true });

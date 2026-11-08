@@ -16,8 +16,9 @@ resolve together; then players take turns firing one unit at a time.
 
 - **Who signs in:** invited players (email + password). Computer opponents are
   accounts too, flagged `is_bot`, that can never sign in.
-- **What it stores:** users, sessions, games, game players, and each game's
-  **action log**. A game's state is never stored, only rebuilt (see below).
+- **What it stores:** users, sessions, games (each with a snapshot of its
+  map), game players, each game's **action log**, and the maps people make in
+  the editor. A game's state is never stored, only rebuilt (see below).
 - **First screen:** the lobby, "Your games", with the new-game form beside it.
 
 It grew out of a 2021 pygame prototype in `old_code/`, kept for reference.
@@ -37,6 +38,7 @@ None of its code did.
 | `npm test` | The rules engine, exhaustively (no server, no browser) |
 | `npx tsx scripts/simulate.ts` | Bots against bots, many games in memory: smoke test and balance report |
 | `npm run test:flow` | Two real browsers play a game, then one plays the computer (server running, seeded) |
+| `npm run test:editor` | The map editor in a real browser: symmetry, tools, undo, autosave, playing a map, deleting it (server running, seeded) |
 | `npm run audit:mobile` | Phone-width audit: tap targets, 16px inputs, overflow (server running, seeded) |
 | `npm run shot` | Screenshot every page, 1440 and 390 wide, light and dark (`--only=`, `--light`, `--desktop`, `--viewport`) |
 | `npm run test:all` | All of the above that need no flags, in order |
@@ -60,11 +62,14 @@ src/game/        The rules. Pure TypeScript, no Node or DOM imports: the server
                  (fog, spawn tiles), rules (the round structure, applyAction),
                  view (what one seat may know), maps, units, constants, rng,
                  bot (the computer opponent), seats, glyphs.
-src/client/      The battle page in the browser: game.ts (controller, socket,
-                 taps), board.ts (canvas drawing), art.ts (the cached map art),
-                 animate.ts, camera.ts (pan, zoom, gestures), panel.ts (side
-                 panel HTML), state.ts, palette.ts.
-src/games.ts     Games as records: create, join, act, replay, the bot driver.
+src/client/      The browser. game.ts (the battle: controller, socket, taps),
+                 board.ts (battle drawing), editor.ts (the map editor),
+                 art.ts (the cached map art), sites.ts (posts and income
+                 sites, shared by both), animate.ts, camera.ts (pan, zoom,
+                 gestures), panel.ts (battle side panel), state.ts, palette.ts.
+src/games.ts     Games as records: create, join, act, replay, map snapshots,
+                 the bot driver.
+src/saved-maps.ts  Maps made in the editor: storing, the save schema, copying.
 src/routes/      HTTP and the game WebSocket. No rules.
 src/views/       Server-rendered pages, icons, map thumbnails.
 public/          styles.css (all tokens) and two small plain-JS page scripts.
@@ -110,6 +115,29 @@ grid walk in `los.ts` compares crossings by cross-multiplied integers, so
 corners are decided exactly, never by rounding. At a corner, a single wall
 ending there only grazes the line; an L of walls (a room corner) or a straight
 wall blocks it. Pinned in `scripts/test-rules.ts`.
+
+**Every game carries its own copy of its map.** `games.map_data` holds the
+map as it was when the game was created; `mapFor()` registers it with the
+rules under the key `game:<id>`, and that key is the state's `mapId`. Games
+replay their logs, so if a map could change under a game its history would
+replay into a different game. This makes editing or deleting a map, or
+changing a built-in map in code, safe for games already played. (Games from
+before snapshots have no `map_data` and use the built-in map by id.) The
+battle page sends its snapshot to the browser, which registers it the same
+way, since custom maps are not in the bundle.
+
+**The editor works through four primitives and the symmetry transforms.**
+Every tool is built from `setTerrain`, `setEdge` and `placeSite`, each applied
+once per image from `symmetryTransforms()` — the same rotations the built-in
+maps are drawn with, so "mirror" in the editor means exactly what it means in
+`maps.ts`. A base painted for seat s puts image k in seat s+k. A stroke is
+one undo step (snapshot at pointer-down, compared at pointer-up). Edits
+autosave 0.7 s after they stop; text fields save but are not undo steps.
+`checkMap()` (`src/game/mapcheck.ts`) is the single definition of
+"playable": the editor lists its problems live and disables Play, the server
+refuses to start a game on a map with any, and the rules test runs every
+built-in map through it. Saved maps are private to their owner; any id that
+is not yours resolves to nothing.
 
 **Maps are drawn once and rotated for every seat.** A map draws one seat's
 share through a "pen" and the builder replays it rotated (half turn for two
@@ -177,6 +205,18 @@ steps in tests.
 whose parent had long text, which included the whole header, so a 26px-tall
 brand link passed. It now only exempts links inside `p`, `li`, `dd`, `.prose`.
 
+**`[hidden]` did nothing on styled elements.** A class that sets `display`
+beats the browser's own `[hidden] { display: none }`, so the battle tooltip
+never hid (it showed stale health) and the editor showed seat buttons the map
+did not have. One global `[hidden] { display: none !important }` fixes all of
+them; keep it.
+
+**Stopping a background `npx tsx` task can leave the server running.** The
+wrapper dies, the node process keeps the port, and a "restarted" server fails
+with EADDRINUSE while the old code goes on answering — so a suite tests the
+old code and reports a 404 for a route that exists. Kill by the port's PID
+(`netstat -ano`) and check the port is free before starting again.
+
 **Fonts a fraction of a pixel tall render badly on canvas.** Labels on the
 board are drawn in screen pixels, not tile units, for that reason.
 
@@ -193,9 +233,13 @@ the server after `seed`/`unseed`, or it serves games that no longer exist.
   `UnitKind` (`types.ts`), a glyph in `glyphs.ts`, and if it has a new trait,
   the rule where the trait applies (`combat.ts` or `rules.ts`) plus
   `TRAIT_TEXT`. The shop, rules page, bot and panel pick it up from there.
-- **A map:** a builder block in `src/game/maps.ts`, added to `MAPS`. Two-seat
-  maps are rotated a half turn, four-seat maps must be square. Run `npm test`:
-  it checks symmetry, bases and reachability.
+- **A built-in map:** a builder block in `src/game/maps.ts`, added to `MAPS`.
+  Two-seat maps are rotated a half turn, four-seat maps must be square. Run
+  `npm test`: it checks symmetry and runs `checkMap`. (Or make it in the
+  editor and copy the saved JSON into a builder.)
+- **An editor tool:** a button in `editorPage` (`src/views/maps-view.ts`), its
+  name in `Tool` and the right set in `src/client/editor.ts`, and its effect in
+  `applyAt` built from the primitives so symmetry and undo come for free.
 - **A rule change:** `src/game/rules.ts` or `combat.ts`, a test in
   `scripts/test-rules.ts`, then `npx tsx scripts/simulate.ts` to see it play.
   Remember stored games replay their logs under the new rules.
@@ -204,8 +248,8 @@ the server after `seed`/`unseed`, or it serves games that no longer exist.
 
 1. `npm run typecheck`, `npm test`, and the simulator if rules or the bot moved.
 2. Restart the server; `npm run unseed && npm run seed`; restart again.
-3. `npm run test:flow`, `npm run audit:mobile`, `npm run shot` — and look at
-   the images. All at zero warnings.
+3. `npm run test:flow`, `npm run test:editor`, `npm run audit:mobile`,
+   `npm run shot` — and look at the images. All at zero warnings.
 4. Update this file in the same change.
 
 ## Deployment

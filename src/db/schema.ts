@@ -45,7 +45,30 @@ export const games = sqliteTable("games", {
   phase: text("phase").notNull().default("planning"),
   winnerSeat: integer("winner_seat"),
   updatedAt: integer("updated_at").notNull(),
+  /**
+   * The map as it was when the game was created, as JSON. A game replays its
+   * log against this copy, so editing (or deleting) a map afterwards can never
+   * change a game already played on it. Null for games from before map
+   * snapshots, which use the built-in map named by map_id.
+   */
+  mapData: text("map_data"),
 });
+
+/** Maps people have made in the editor. `data` is the MapDef as JSON. */
+export const maps = sqliteTable(
+  "maps",
+  {
+    id: text("id").primaryKey(),
+    ownerId: integer("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    data: text("data").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [index("maps_owner").on(t.ownerId)],
+);
+
+export type SavedMap = typeof maps.$inferSelect;
 
 export const gamePlayers = sqliteTable(
   "game_players",

@@ -7,7 +7,7 @@ import path from "node:path";
 import * as esbuild from "esbuild";
 import { config } from "./config.js";
 
-const ENTRIES = { "game.js": "src/client/game.ts" } as const;
+const ENTRIES = { "game.js": "src/client/game.ts", "editor.js": "src/client/editor.ts" } as const;
 export type BundleName = keyof typeof ENTRIES;
 
 const built = new Map<BundleName, string>();

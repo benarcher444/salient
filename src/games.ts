@@ -7,12 +7,12 @@ import crypto from "node:crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { db, sqlite } from "./db/index.js";
 import { gameActions, gamePlayers, games, users, type Game } from "./db/schema.js";
-import { getMap } from "./game/maps.js";
+import { getMap, registerMap } from "./game/maps.js";
 import { streamFor } from "./game/rng.js";
 import { applyAction, newGame } from "./game/rules.js";
 import { chooseAction } from "./game/bot.js";
 import { viewFor } from "./game/view.js";
-import type { Action, GameEvent, GameState, Seat } from "./game/types.js";
+import type { Action, GameEvent, GameState, MapDef, Seat } from "./game/types.js";
 
 export interface PlayerInfo {
   seat: Seat;
@@ -23,6 +23,8 @@ export interface PlayerInfo {
 
 export interface LiveGame {
   game: Game;
+  /** The map this game is played on: its own snapshot, under the key `game:<id>`. */
+  map: MapDef;
   players: PlayerInfo[];
   /** null until every seat is filled and the game starts. */
   state: GameState | null;
@@ -52,10 +54,23 @@ function loadPlayers(gameId: string): PlayerInfo[] {
     .all();
 }
 
+/**
+ * The map a game is played on, registered with the rules under the game's own
+ * key so getMap() finds it. Each game carries a snapshot taken when it was
+ * created, so editing or deleting the original map never changes it. Games
+ * from before snapshots fall back to the built-in map they name.
+ */
+export function mapFor(game: Pick<Game, "id" | "mapId" | "mapData">): MapDef {
+  if (!game.mapData) return getMap(game.mapId);
+  const map: MapDef = { ...(JSON.parse(game.mapData) as MapDef), id: `game:${game.id}` };
+  registerMap(map);
+  return map;
+}
+
 /** Replay a game's whole log. */
-function replay(game: Game): { state: GameState; actionCount: number } {
+function replay(game: Game, map: MapDef): { state: GameState; actionCount: number } {
   const rows = db.select().from(gameActions).where(eq(gameActions.gameId, game.id)).orderBy(asc(gameActions.seq)).all();
-  let state = newGame(game.mapId, game.seatCount);
+  let state = newGame(map.id, game.seatCount);
   for (const row of rows) {
     state = applyAction(state, JSON.parse(row.payload) as Action, streamFor(game.seed, row.seq)).state;
   }
@@ -68,8 +83,9 @@ export function loadGame(id: string): LiveGame | null {
   const game = db.select().from(games).where(eq(games.id, id)).get();
   if (!game) return null;
   const players = loadPlayers(id);
-  const { state, actionCount } = game.startedAt ? replay(game) : { state: null, actionCount: 0 };
-  const live: LiveGame = { game, players, state, actionCount };
+  const map = mapFor(game);
+  const { state, actionCount } = game.startedAt ? replay(game, map) : { state: null, actionCount: 0 };
+  const live: LiveGame = { game, map, players, state, actionCount };
   cache.set(id, live);
   return live;
 }
@@ -114,26 +130,29 @@ function botUserIds(count: number): number[] {
 }
 
 /**
- * Create a game with the creator in seat 0. With `bots`, every other seat is
- * filled with a computer opponent and the game starts at once.
+ * Create a game with the creator in seat 0, on a snapshot of `map`. With
+ * `bots`, every other seat is filled with a computer opponent and the game
+ * starts at once. The caller checks the map is playable (checkMap).
  */
-export function createGame(userId: number, mapId: string, seatCount: number, bots = false): string {
-  const map = getMap(mapId);
+export function createGame(userId: number, map: MapDef, seatCount: number, bots = false): string {
   if (seatCount < 2 || seatCount > map.seats) throw new Error("bad seat count");
   const id = newGameId();
   const now = Date.now();
   const botIds = bots ? botUserIds(seatCount - 1) : [];
+  const mapData = JSON.stringify(map);
+  const snapshot = mapFor({ id, mapId: map.id, mapData });
   sqlite.transaction(() => {
     db.insert(games)
       .values({
         id,
-        mapId,
+        mapId: map.id,
+        mapData,
         seatCount,
         seed: crypto.randomBytes(16).toString("hex"),
         createdBy: userId,
         createdAt: now,
         updatedAt: now,
-        ...(bots ? { startedAt: now, ...summaryOf(newGame(mapId, seatCount)) } : {}),
+        ...(bots ? { startedAt: now, ...summaryOf(newGame(snapshot.id, seatCount)) } : {}),
       })
       .run();
     db.insert(gamePlayers).values({ gameId: id, seat: 0, userId, joinedAt: now }).run();
@@ -158,7 +177,7 @@ export function joinGame(id: string, userId: number): JoinResult {
     const now = Date.now();
     db.insert(gamePlayers).values({ gameId: id, seat, userId, joinedAt: now }).run();
     if (taken.length + 1 === game.seatCount) {
-      db.update(games).set({ startedAt: now, updatedAt: now, ...summaryOf(newGame(game.mapId, game.seatCount)) }).where(eq(games.id, id)).run();
+      db.update(games).set({ startedAt: now, updatedAt: now, ...summaryOf(newGame(mapFor(game).id, game.seatCount)) }).where(eq(games.id, id)).run();
     }
     return "joined";
   })();
@@ -176,7 +195,7 @@ export function leaveGame(id: string, userId: number): boolean {
   if (game.createdBy === userId) {
     db.delete(games).where(eq(games.id, id)).run();
     cache.delete(id);
-    for (const l of listeners.get(id) ?? []) l({ game, players: [], state: null, actionCount: 0 }, []);
+    for (const l of listeners.get(id) ?? []) l({ game, map: mapFor(game), players: [], state: null, actionCount: 0 }, []);
     return true;
   }
   db.delete(gamePlayers).where(and(eq(gamePlayers.gameId, id), eq(gamePlayers.userId, userId))).run();
@@ -270,6 +289,7 @@ export function subscribe(id: string, listener: GameListener): () => void {
 
 export interface GameSummary {
   game: Game;
+  map: MapDef;
   players: PlayerInfo[];
   mySeat: Seat | null;
   /** Is the game waiting on this user right now? */
@@ -297,6 +317,7 @@ export function openGames(userId: number): GameSummary[] {
 
 function summarise(game: Game, userId: number): GameSummary {
   const live = loadGame(game.id);
+  const map = live?.map ?? mapFor(game);
   const players = live?.players ?? [];
   const mySeat = players.find((p) => p.userId === userId)?.seat ?? null;
   const s = live?.state;
@@ -305,7 +326,7 @@ function summarise(game: Game, userId: number): GameSummary {
     if (s.phase === "planning") yourMove = s.orders[mySeat] === null;
     if (s.phase === "attack") yourMove = s.attackTurn === mySeat;
   }
-  return { game: live?.game ?? game, players, mySeat, yourMove };
+  return { game: live?.game ?? game, map, players, mySeat, yourMove };
 }
 
 /** Forget cached games: tests and repair scripts that write to the database directly. */

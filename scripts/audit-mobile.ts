@@ -6,7 +6,7 @@ import { chromium } from "playwright";
 import { DEMO_PASSWORD } from "./demo.js";
 
 const BASE = process.env.TEST_BASE_URL ?? `http://localhost:${process.env.PORT ?? 3100}`;
-const PAGES = ["/", "/how-to-play", "/settings"];
+const PAGES = ["/", "/maps", "/how-to-play", "/settings"];
 const MIN_TARGET = 43.5;
 
 const browser = await chromium.launch({ channel: "chrome" });
@@ -19,7 +19,9 @@ await Promise.all([page.waitForURL((u) => !u.pathname.includes("/login")), page.
 
 // The battle page too: found from the lobby, as the seeded game in progress.
 const battle = await page.locator('.game-card a.btn:has-text("Open")').first().getAttribute("href");
-const paths = battle ? [...PAGES, battle] : PAGES;
+await page.goto(`${BASE}/maps`);
+const editor = await page.locator('.map-card a.btn:has-text("Edit")').first().getAttribute("href");
+const paths = [...PAGES, ...(battle ? [battle] : []), ...(editor ? [editor] : [])];
 
 let problems = 0;
 for (const path of paths) {

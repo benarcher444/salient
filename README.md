@@ -8,7 +8,8 @@ else does the same; watch them play out together; then trade shots one unit
 at a time. Fog of war hides everything your units can't see. Facing matters:
 hit someone from the side or behind and it hurts more.
 
-Play friends by sending a link, or play the computer.
+Play friends by sending a link, or play the computer. Design your own
+battlefields in the map editor and play them straight away.
 
 ## The game in a minute
 
@@ -48,6 +49,7 @@ npm run typecheck
 npm test                         # the rules, exhaustively
 npx tsx scripts/simulate.ts      # bots play each other: every game must finish
 npm run test:flow                # two browsers play a real game (server running)
+npm run test:editor              # the map editor in a real browser
 npm run audit:mobile             # phone-size checks (server running)
 npm run shot                     # screenshots of every page, light and dark
 ```

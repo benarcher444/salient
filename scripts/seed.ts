@@ -10,6 +10,7 @@ import { runMigrations } from "../src/db/migrate.js";
 import { gamePlayers, users } from "../src/db/schema.js";
 import { act, createGame, joinGame, loadGame } from "../src/games.js";
 import { getMap } from "../src/game/maps.js";
+import { createMap, getOwnMap, listMaps, saveMap } from "../src/saved-maps.js";
 import { DEMO_ACCOUNTS, DEMO_PASSWORD } from "./demo.js";
 
 runMigrations();
@@ -29,7 +30,7 @@ const [alex, sam] = ids as [number, number];
 const hasGame = db.select().from(gamePlayers).where(eq(gamePlayers.userId, alex)).all().length > 0;
 if (!hasGame) {
   // A Crossroads game a round in: both sides deployed and advancing.
-  const id = createGame(alex, "crossroads", 2);
+  const id = createGame(alex, getMap("crossroads"), 2);
   joinGame(id, sam);
   const map = getMap("crossroads");
   const b0 = map.bases[0]!;
@@ -73,5 +74,13 @@ if (!hasGame) {
 
 // An open game with a free seat, so the lobby and waiting room have one to show.
 const robinGames = db.select().from(gamePlayers).where(eq(gamePlayers.userId, ids[2]!)).all();
-if (robinGames.length === 0) console.log(`  added open game #${createGame(ids[2]!, "riverside", 2)}`);
+if (robinGames.length === 0) console.log(`  added open game #${createGame(ids[2]!, getMap("riverside"), 2)}`);
+
+// A map of Alex's own, for the maps page and the editor.
+if (listMaps(alex).length === 0) {
+  const mapId = createMap(alex, "crossroads")!;
+  const entry = getOwnMap(mapId, alex)!;
+  saveMap(mapId, alex, { ...entry.map, name: "Alex's outpost", blurb: "A copy of Crossroads to tinker with." });
+  console.log(`  added map ${mapId}`);
+}
 console.log("\nDemo accounts use the password in scripts/demo.ts.\n");

@@ -14,6 +14,7 @@ import { stateFromView, type PlayerView } from "../game/view.js";
 export interface Boot {
   gameId: string;
   mapId: string;
+  map: MapDef;
   seat: Seat | null;
   players: { seat: Seat; name: string }[];
 }

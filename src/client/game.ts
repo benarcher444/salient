@@ -1,7 +1,7 @@
 // The battle page: connects to the game, turns taps into orders, and keeps the
 // board, panel and top bar in step with the server.
 import { facingToward, samePoint } from "../game/grid.js";
-import { getMap } from "../game/maps.js";
+import { getMap, registerMap } from "../game/maps.js";
 import { pathTo } from "../game/movement.js";
 import { UNITS } from "../game/units.js";
 import type { Facing, GameEvent, Point, Unit, UnitKind } from "../game/types.js";
@@ -34,6 +34,8 @@ declare global {
 }
 
 const boot = window.SALIENT_GAME;
+// Every game carries its own copy of its map; the rules look it up by id.
+registerMap(boot.map);
 const s: ClientState = {
   boot,
   map: getMap(boot.mapId),

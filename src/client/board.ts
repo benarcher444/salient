@@ -8,6 +8,7 @@ import { UNITS } from "../game/units.js";
 import type { Point, Unit } from "../game/types.js";
 import { Animator } from "./animate.js";
 import { renderMapArt } from "./art.js";
+import { drawIncome, drawPost } from "./sites.js";
 import { Camera } from "./camera.js";
 import { alpha, readPalette, shade, type Palette } from "./palette.js";
 import {
@@ -157,68 +158,14 @@ export class Board {
     const pulse = (site: "post" | "income", i: number) => this.anim.pulses.find((p) => p.site === site && p.index === i);
 
     map.posts.forEach((p, i) => {
-      const owner = v?.postOwners[i] ?? null;
-      const colour = owner === null ? this.pal.post : this.pal.seats[owner]!;
-      const cx = p.x + 0.5;
-      const cy = p.y + 0.5;
-      g.fillStyle = alpha(this.pal.paper, 0.9);
-      g.beginPath();
-      g.arc(cx, cy, 0.42, 0, Math.PI * 2);
-      g.fill();
-      g.strokeStyle = colour;
-      g.lineWidth = 0.08;
-      g.stroke();
-      g.setLineDash([0.12, 0.08]);
-      g.lineWidth = 0.03;
-      g.beginPath();
-      g.arc(cx, cy, 0.32, 0, Math.PI * 2);
-      g.stroke();
-      g.setLineDash([]);
-      // Flag
-      g.strokeStyle = this.pal.ink;
-      g.lineWidth = 0.045;
-      g.beginPath();
-      g.moveTo(cx - 0.1, cy + 0.2);
-      g.lineTo(cx - 0.1, cy - 0.24);
-      g.stroke();
-      g.fillStyle = owner === null ? shade(this.pal.post, 0.35) : colour;
-      g.beginPath();
-      const wave = Math.sin(now / 400 + i) * 0.03;
-      g.moveTo(cx - 0.08, cy - 0.24);
-      g.quadraticCurveTo(cx + 0.06, cy - 0.2 + wave, cx + 0.2, cy - 0.16);
-      g.quadraticCurveTo(cx + 0.06, cy - 0.1 + wave, cx - 0.08, cy - 0.06);
-      g.closePath();
-      g.fill();
+      drawPost(g, this.pal, p, v?.postOwners[i] ?? null, now, i);
       const pl = pulse("post", i);
-      if (pl) this.ring(cx, cy, pl.seat === null ? this.pal.post : this.pal.seats[pl.seat]!, (now - pl.start) / 900);
+      if (pl) this.ring(p.x + 0.5, p.y + 0.5, pl.seat === null ? this.pal.post : this.pal.seats[pl.seat]!, (now - pl.start) / 900);
     });
-
     map.income.forEach((p, i) => {
-      const owner = v?.incomeOwners[i] ?? null;
-      const cx = p.x + 0.5;
-      const cy = p.y + 0.5;
-      g.save();
-      g.translate(cx, cy);
-      g.rotate(Math.PI / 4);
-      const grad = g.createLinearGradient(-0.25, -0.25, 0.25, 0.25);
-      grad.addColorStop(0, shade(this.pal.income, 0.35));
-      grad.addColorStop(1, shade(this.pal.income, -0.2));
-      g.fillStyle = grad;
-      g.fillRect(-0.24, -0.24, 0.48, 0.48);
-      g.strokeStyle = owner === null ? shade(this.pal.income, -0.4) : this.pal.seats[owner]!;
-      g.lineWidth = owner === null ? 0.04 : 0.09;
-      g.strokeRect(-0.24, -0.24, 0.48, 0.48);
-      g.restore();
-      // A glint that sweeps across now and then.
-      const glint = (now / 1600 + i * 0.37) % 1;
-      if (glint < 0.25) {
-        g.fillStyle = alpha("#ffffff", 0.7 * (1 - glint * 4));
-        g.beginPath();
-        g.arc(cx - 0.08, cy - 0.1, 0.05, 0, Math.PI * 2);
-        g.fill();
-      }
+      drawIncome(g, this.pal, p, v?.incomeOwners[i] ?? null, now, i);
       const pl = pulse("income", i);
-      if (pl) this.ring(cx, cy, pl.seat === null ? this.pal.income : this.pal.seats[pl.seat]!, (now - pl.start) / 900);
+      if (pl) this.ring(p.x + 0.5, p.y + 0.5, pl.seat === null ? this.pal.income : this.pal.seats[pl.seat]!, (now - pl.start) / 900);
     });
   }
 

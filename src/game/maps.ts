@@ -6,9 +6,23 @@
 // other seat. Bases drawn by the pen belong to the seat the rotation is for.
 import type { EdgeKind, IncomeSite, MapDef, Point, Side, Terrain } from "./types.js";
 
-interface Transform {
+export interface Transform {
   point(p: Point): Point;
   side(s: Side): Side;
+}
+
+/** How the map editor repeats a stroke: not at all, a half turn, or four quarter turns. */
+export type SymmetryMode = "none" | "mirror" | "fourway";
+
+/**
+ * The transforms a stroke is repeated through, one per image. Image k of a
+ * base stroke belongs to the seat k places on from the one painted, which is
+ * also how the built-in maps hand each seat its base.
+ */
+export function symmetryTransforms(mode: SymmetryMode, w: number, h: number): Transform[] {
+  if (mode === "mirror") return [identity(), rotate180(w, h)];
+  if (mode === "fourway" && w === h) return [identity(), rotate90(w, 1), rotate90(w, 2), rotate90(w, 3)];
+  return [identity()];
 }
 
 const OPPOSITE: Record<Side, Side> = { n: "s", s: "n", e: "w", w: "e" };

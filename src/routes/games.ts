@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
 import { z } from "zod";
 import { currentUser, requireUser } from "../context.js";
-import { MAPS } from "../game/maps.js";
+import { mapForNewGame, listMaps } from "../saved-maps.js";
 import { ERROR_TEXT, RuleError, type Facing, type Orders } from "../game/types.js";
 import { eventsFor, viewFor, type PlayerView } from "../game/view.js";
 import { act, createGame, gamesFor, joinGame, leaveGame, loadGame, openGames, subscribe, type ClientAction, type LiveGame } from "../games.js";
@@ -18,7 +18,8 @@ export function gameRoutes(app: FastifyInstance) {
     const user = requireUser(request, reply);
     if (!user) return reply;
     const error = (request.query as Record<string, string | undefined>).error;
-    return reply.type(html).send(lobbyPage(user, gamesFor(user.id), openGames(user.id), error === "full" ? "That game has already filled up." : undefined));
+    const ownMaps = listMaps(user.id).filter((e) => e.problems.length === 0).map((e) => e.map);
+    return reply.type(html).send(lobbyPage(user, gamesFor(user.id), openGames(user.id), ownMaps, error === "full" ? "That game has already filled up." : undefined));
   });
 
   app.post("/games", (request, reply) => {
@@ -27,9 +28,10 @@ export function gameRoutes(app: FastifyInstance) {
     const parsed = z
       .object({ map: z.string(), seats: z.coerce.number().int().min(2).max(4), opponents: z.enum(["people", "bots"]).default("people") })
       .safeParse(request.body);
-    const map = parsed.success ? MAPS.find((m) => m.id === parsed.data.map) : undefined;
+    // A built-in map, or one of this user's own maps that is playable.
+    const map = parsed.success ? mapForNewGame(parsed.data.map, user.id) : null;
     if (!parsed.success || !map) return reply.code(400).send({ error: "bad_request" });
-    const id = createGame(user.id, map.id, Math.min(parsed.data.seats, map.seats), parsed.data.opponents === "bots");
+    const id = createGame(user.id, map, Math.min(parsed.data.seats, map.seats), parsed.data.opponents === "bots");
     return reply.redirect(`/g/${id}`);
   });
 
@@ -42,7 +44,7 @@ export function gameRoutes(app: FastifyInstance) {
     const seat = live.players.find((p) => p.userId === user.id)?.seat ?? null;
     if (!live.state) {
       const shareUrl = `${request.protocol}://${request.host}/g/${id}`;
-      return reply.type(html).send(waitingRoom(user, { game: live.game, players: live.players, mySeat: seat, yourMove: false }, shareUrl));
+      return reply.type(html).send(waitingRoom(user, { game: live.game, map: live.map, players: live.players, mySeat: seat, yourMove: false }, shareUrl));
     }
     // Outsiders may look at a finished game, never one in progress: they
     // would see through everyone's fog.

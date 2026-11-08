@@ -5,7 +5,8 @@
 //   npx tsx scripts/test-rules.ts
 import { stepOpen } from "../src/game/grid.js";
 import { traceLine } from "../src/game/los.js";
-import { MAPS, MapBuilder, getMap, registerMap } from "../src/game/maps.js";
+import { MAPS, MapBuilder, getMap, registerMap, symmetryTransforms } from "../src/game/maps.js";
+import { checkMap } from "../src/game/mapcheck.js";
 import { pathTo, reachable, validatePath } from "../src/game/movement.js";
 import { previewShot, rollShot } from "../src/game/combat.js";
 import { applyAction, newGame } from "../src/game/rules.js";
@@ -96,6 +97,40 @@ for (const map of MAPS) {
   }
   const unreachable = [...map.posts, ...map.income, ...map.bases.flat()].filter((p) => !seen.has(`${p.x},${p.y}`));
   check(`${map.name}: every site is reachable from seat 0's base`, unreachable.length === 0, unreachable.map((p) => `${p.x},${p.y}`).join(" "));
+}
+
+// ---------------------------------------------------------------------------
+section("Map checking (what the editor shows and the server enforces)");
+
+for (const map of MAPS) check(`${map.name} passes the map check`, checkMap(map).length === 0, checkMap(map).join(" | "));
+{
+  const ok = board("check-ok", (b) => b.pen().post(6, 6));
+  check("a small open map with bases and a post is playable", checkMap(ok).length === 0, checkMap(ok).join(" | "));
+  const noPost = board("check-nopost");
+  check("a map with no command post is not", checkMap(noPost).some((p) => p.includes("command post")), checkMap(noPost).join(" | "));
+  const walled = board("check-walled", (b) => {
+    b.pen().post(6, 6);
+    // A ring of rock round the post.
+    for (let i = 4; i <= 8; i++) for (const [x, y] of [[i, 4], [i, 8], [4, i], [8, i]] as const) b.pen().tile(x, y, "rock");
+  });
+  check("a post nobody can reach is reported", checkMap(walled).some((p) => p.includes("can't reach the command post")), checkMap(walled).join(" | "));
+  const rockBase = board("check-rockbase", (b) => {
+    b.pen().post(6, 6);
+    b.pen().tile(0, 0, "rock");
+  });
+  check("a base tile on rock is reported", checkMap(rockBase).some((p) => p.includes("on rock")), checkMap(rockBase).join(" | "));
+  const shared = board("check-shared", (b) => b.pen().post(0, 0));
+  check("a post on a base tile is reported", checkMap(shared).some((p) => p.includes("share the tile")), checkMap(shared).join(" | "));
+}
+{
+  check("mirror symmetry repeats a stroke twice", symmetryTransforms("mirror", 20, 14).length === 2);
+  check("four-way needs a square map", symmetryTransforms("fourway", 20, 14).length === 1 && symmetryTransforms("fourway", 20, 20).length === 4);
+  const [, half] = symmetryTransforms("mirror", 20, 14);
+  const q = half!.point({ x: 2, y: 3 });
+  check("a half turn sends (2,3) to (17,10) and north to south", q.x === 17 && q.y === 10 && half!.side("n") === "s", JSON.stringify(q));
+  const [, quarter] = symmetryTransforms("fourway", 20, 20);
+  const r = quarter!.point({ x: 2, y: 3 });
+  check("a quarter turn sends (2,3) to (16,2) and north to east", r.x === 16 && r.y === 2 && quarter!.side("n") === "e", JSON.stringify(r));
 }
 
 // ---------------------------------------------------------------------------

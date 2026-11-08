@@ -13,6 +13,7 @@ import { runMigrations } from "./db/migrate.js";
 import { resumeBots } from "./games.js";
 import { authRoutes } from "./routes/auth.js";
 import { gameRoutes } from "./routes/games.js";
+import { mapRoutes } from "./routes/maps.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { layout } from "./views/layout.js";
 import { notFoundPage } from "./views/pages.js";
@@ -50,6 +51,7 @@ await app.register(fastifyStatic, {
 
 authRoutes(app);
 gameRoutes(app);
+mapRoutes(app);
 settingsRoutes(app);
 
 app.setNotFoundHandler((request, reply) => reply.code(404).type("text/html; charset=utf-8").send(notFoundPage(currentUser(request))));
