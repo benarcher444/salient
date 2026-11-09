@@ -13,9 +13,10 @@ battlefields in the map editor and play them straight away.
 
 ## The game in a minute
 
-- **Tickets.** Each side starts with 40. A lost unit costs 2. Holding fewer
-  command posts than the strongest opponent bleeds 2 a round per post behind.
-  Run out and you're out.
+- **Take their base.** Each side starts with a small base. Base tiles are
+  captured one at a time, like command posts: end a round on one and it turns
+  neutral, end the next there and it's yours to deploy on. A side with no
+  base tiles and no units left is out; the last one standing wins.
 - **A round:** everyone **plans** at once (deploy units, give each a route and
   a facing) → everything **moves** together, step by step → players take turns
   **firing** one unit at a time → **upkeep**: captures, income, healing.
@@ -46,7 +47,9 @@ tile to deploy. Or play entirely from the keyboard:
 | + − 0 | Zoom in, out, fit |
 | Esc, ? | Deselect; show all keys |
 
-The full rules are on the game's **How to play** page.
+The full rules are on the game's **How to play** page. Every unit's stats and
+the economy are plain JSON files in [`tuning/`](tuning/README.md), made to be
+tinkered with.
 
 ## Running it
 

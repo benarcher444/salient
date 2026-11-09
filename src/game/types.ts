@@ -41,7 +41,10 @@ export interface MapDef {
    * (column `width` is the right border). Index `y * (width + 1) + x`.
    */
   vEdges: (EdgeKind | null)[];
-  /** Spawn tiles for each seat. These can never be captured. */
+  /**
+   * Each seat's base: the tiles it starts owning and deploys onto. Every base
+   * tile can be captured, one at a time, like a command post.
+   */
   bases: Point[][];
   posts: Point[];
   income: IncomeSite[];
@@ -77,7 +80,6 @@ export interface Unit {
 export interface SeatState {
   seat: Seat;
   gold: number;
-  tickets: number;
   eliminated: boolean;
 }
 
@@ -114,6 +116,11 @@ export interface GameState {
   postOwners: (Seat | null)[];
   /** Owner of each income site, by index into map.income. */
   incomeOwners: (Seat | null)[];
+  /**
+   * Owner of each base tile, by index into baseTiles(map, seatCount): the
+   * playing seats' bases, flattened in seat order. Starts as the home seat.
+   */
+  baseOwners: (Seat | null)[];
   /** Planning phase: each seat's submitted orders, or null while still planning. */
   orders: (Orders | null)[];
   /** Attack phase: whose activation it is, and which units have used theirs. */
@@ -150,9 +157,8 @@ export type GameEvent =
       killed: boolean;
     }
   | { type: "hold"; unitId: number; seat: Seat }
-  | { type: "capture"; site: "post" | "income"; index: number; from: Seat | null; to: Seat | null }
+  | { type: "capture"; site: "post" | "income" | "base"; index: number; from: Seat | null; to: Seat | null }
   | { type: "income"; seat: Seat; amount: number }
-  | { type: "bleed"; seat: Seat; tickets: number }
   | { type: "eliminated"; seat: Seat }
   | { type: "round"; round: number }
   | { type: "phase"; phase: Phase }
@@ -192,7 +198,7 @@ export const ERROR_TEXT: Record<RuleErrorCode, string> = {
   path_too_long: "That route is further than the unit can move.",
   duplicate_order: "A unit was given two orders.",
   duplicate_destination: "Two of your units are heading for the same tile.",
-  bad_spawn_tile: "Units can only be deployed on your base or a command post you hold.",
+  bad_spawn_tile: "Units can only be deployed on base tiles or command posts you hold.",
   spawn_tile_occupied: "Something is already standing there.",
   not_enough_gold: "You can't afford that.",
   already_acted: "That unit has already acted this round.",

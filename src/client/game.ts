@@ -2,8 +2,10 @@
 // board, panel and top bar in step with the server.
 import { FACING_NAME, facingToward, samePoint } from "../game/grid.js";
 import { getMap, registerMap } from "../game/maps.js";
+import { useTuning } from "../game/tuning.js";
 import { pathTo } from "../game/movement.js";
 import { UNITS, UNIT_KINDS } from "../game/units.js";
+import { baseTiles } from "../game/visibility.js";
 import type { Facing, GameEvent, Point, Unit, UnitKind } from "../game/types.js";
 import type { PlayerView } from "../game/view.js";
 import { Board } from "./board.js";
@@ -36,8 +38,10 @@ declare global {
 }
 
 const boot = window.SALIENT_GAME;
-// Every game carries its own copy of its map; the rules look it up by id.
+// Every game carries its own copy of its map and of its tuning (unit stats,
+// rule numbers); the rules look the map up by id and read the active tuning.
 registerMap(boot.map);
+if (boot.tuning) useTuning(boot.tuning);
 const s: ClientState = {
   boot,
   map: getMap(boot.mapId),
@@ -176,6 +180,7 @@ function onMessage(m: ServerMessage) {
   placeCursor();
   for (const e of m.events) logEvent(e, v.round);
   announce(before, v);
+  warnBaseLoss(m.events);
   refresh();
 }
 
@@ -228,19 +233,13 @@ function logEvent(e: GameEvent, round: number) {
       break;
     }
     case "capture":
-      html =
-        e.to === null
-          ? `${e.site === "post" ? "A command post" : "An income site"} was neutralised.`
-          : `${who(e.to)} took ${e.site === "post" ? "a command post" : "an income site"}.`;
+      html = captureLine(e, who);
       break;
     case "income":
       html = `+${e.amount} gold.`;
       break;
-    case "bleed":
-      html = `${who(e.seat)} lost ${e.tickets} tickets to the enemy's command posts.`;
-      break;
     case "eliminated":
-      html = `${who(e.seat)} ${e.seat === seat ? "are" : "is"} out of tickets.`;
+      html = `${who(e.seat)} ${e.seat === seat ? "have" : "has"} no base and no units left: knocked out.`;
       break;
     case "gameOver":
       html = e.winner === null ? "The game ends in a draw." : `${who(e.winner)} won.`;
@@ -248,6 +247,32 @@ function logEvent(e: GameEvent, round: number) {
   }
   if (html) s.log.push({ round, html });
   if (s.log.length > 60) s.log.splice(0, s.log.length - 60);
+}
+
+/** A capture, in words. Base tiles say whose base they belong to. */
+function captureLine(e: Extract<GameEvent, { type: "capture" }>, who: (p: number | null) => string): string {
+  let what = e.site === "post" ? "a command post" : "an income site";
+  if (e.site === "base") {
+    const home = baseTiles(s.map, s.view?.seats.length ?? 0)[e.index]?.home;
+    what = home === undefined ? "a base tile" : home === mySeat(s) ? "a tile of your base" : `a tile of ${playerName(s, home)}'s base`;
+  }
+  if (e.to === null) return `${who(e.from)} lost ${what}: it's neutral now.`;
+  return `${who(e.to)} took ${what}.`;
+}
+
+/** Losing a tile of your base deserves a banner, not just a log line. */
+function warnBaseLoss(events: GameEvent[]) {
+  const seat = mySeat(s);
+  if (seat === null) return;
+  const lost = events.filter((e) => e.type === "capture" && e.site === "base" && e.from === seat).length;
+  if (!lost) return;
+  const left = s.view ? baseTiles(s.map, s.view.seats.length).filter((_, i) => s.view!.baseOwners[i] === seat).length : 0;
+  const delay = Math.max(0, board.anim.busyUntil - performance.now());
+  const v = s.view;
+  window.setTimeout(
+    () => s.view === v && showBanner(lost === 1 ? "Base tile lost" : `${lost} base tiles lost`, left ? `${left} left. Retake them before they're all gone.` : "No base left: keep a unit alive or you're out.", "lose", 3200),
+    delay,
+  );
 }
 
 // --- Taps on the board -------------------------------------------------------------

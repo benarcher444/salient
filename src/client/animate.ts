@@ -39,7 +39,7 @@ export interface Floater {
 }
 
 export interface Pulse {
-  site: "post" | "income";
+  site: "post" | "income" | "base";
   index: number;
   seat: number | null;
   start: number;

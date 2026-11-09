@@ -4,17 +4,20 @@
 //
 // The plan is deliberately simple, and readable as a list of priorities:
 //   Buying:    an engineer while there are income sites to take, then a mix.
-//   Moving:    stay on a site it is capturing; otherwise head for the nearest
-//              site it doesn't hold, preferring tiles with cover, never two
-//              units to one tile; face the nearest enemy it knows of.
-//   Shooting:  the shot with the best expected damage, with a bonus for kills.
+//   Moving:    stay on a site it is capturing (an enemy base tile, a post,
+//              income for engineers). Send the nearest units home when enemies
+//              come near its base. Everyone else heads for its own lost base
+//              tiles first, then enemy base tiles and posts, preferring tiles
+//              with cover, never two units to one tile; face the nearest enemy.
+//   Shooting:  the shot with the best expected damage, with a bonus for kills
+//              and a bigger one for enemies standing on its base.
 import { previewShot } from "./combat.js";
 import { DIRS, TERRAIN, distance, edgeAt, facingToward, inBounds, terrainAt } from "./grid.js";
 import { getMap } from "./maps.js";
 import { pathTo, reachable } from "./movement.js";
 import { targetsFor, validateOrders } from "./rules.js";
 import { UNITS, hasTrait } from "./units.js";
-import { spawnTiles } from "./visibility.js";
+import { baseTiles, spawnTiles } from "./visibility.js";
 import { stateFromView, type PlayerView } from "./view.js";
 import type { Facing, MapDef, MoveOrder, Orders, Point, SpawnOrder, Unit, UnitKind } from "./types.js";
 
@@ -58,16 +61,22 @@ export function planOrders(view: PlayerView, random: () => number): Orders {
   const k = (p: Point) => `${p.x},${p.y}`;
 
   // Sites still to take. A post we already own is done; the enemy's or a
-  // neutral one is a target. Income sites matter to engineers only.
+  // neutral one is a target. Income sites matter to engineers only. Base
+  // tiles: our own lost ones come first, then the enemy's.
   const posts = map.posts.filter((_, i) => view.postOwners[i] !== seat);
   const income = map.income.filter((_, i) => view.incomeOwners[i] !== seat);
-  const enemyBase = centreOf(map.bases.filter((_, s) => s !== seat && !view.seats[s]?.eliminated).flat());
+  const bases = baseTiles(map, view.seats.length);
+  const lostBase = bases.filter((t, i) => t.home === seat && view.baseOwners[i] !== seat);
+  const enemyBaseTiles = bases.filter((t, i) => t.home !== seat && view.baseOwners[i] !== seat);
+  const ownBase = bases.filter((_, i) => view.baseOwners[i] === seat);
+  const enemyBase = centreOf(enemyBaseTiles);
+  const on = (ps: Point[], u: Point) => ps.some((p) => p.x === u.x && p.y === u.y);
 
   const moves: MoveOrder[] = [];
   // Units already standing on a site they are taking stay put, and claim it.
   for (const u of mine) {
     const capturing =
-      posts.some((p) => p.x === u.x && p.y === u.y) || (hasTrait(u.kind, "engineer") && income.some((p) => p.x === u.x && p.y === u.y));
+      on(posts, u) || on(lostBase, u) || on(enemyBaseTiles, u) || (hasTrait(u.kind, "engineer") && on(income, u));
     if (capturing) {
       claimed.add(k(u));
       moves.push({ unitId: u.id, path: [], facing: faceThreat(u, enemies, map) });
@@ -75,11 +84,25 @@ export function planOrders(view: PlayerView, random: () => number): Orders {
   }
   const capturingIds = new Set(moves.map((m) => m.unitId));
 
+  // Defence: for each base tile of ours an enemy is closing on, the nearest
+  // free unit goes to stand on it (a defender on the tile blocks the capture).
+  const defending = new Map<number, Point>();
+  const threatened = ownBase
+    .filter((t) => enemies.some((e) => distance(e, t) <= DEFEND_RADIUS))
+    .sort((a, b) => nearestEnemy(a, enemies) - nearestEnemy(b, enemies))
+    .slice(0, MAX_DEFENDERS);
+  for (const t of threatened) {
+    const guard = mine
+      .filter((u) => !capturingIds.has(u.id) && !defending.has(u.id))
+      .sort((a, b) => distance(a, t) - distance(b, t))[0];
+    if (guard && distance(guard, t) <= DEFEND_RADIUS + 4) defending.set(guard.id, t);
+  }
+
   // Everyone else heads somewhere. Units that would otherwise stay still
   // must claim their tile first, so nobody plans to land on them.
   const movers = mine.filter((u) => !capturingIds.has(u.id));
   for (const u of movers) {
-    const goal = goalFor(u, posts, income, enemies, enemyBase, claimed);
+    const goal = defending.get(u.id) ?? goalFor(u, { posts, income, lostBase, enemyBaseTiles }, enemies, enemyBase, claimed);
     const reach = reachable(map, u, blocked);
     // A sniper with something to shoot holds still rather than spoil its aim.
     const hasShot = enemies.some((e) => previewShot(map, u, e).possible);
@@ -114,19 +137,41 @@ export function planOrders(view: PlayerView, random: () => number): Orders {
   }
 }
 
-function goalFor(u: Unit, posts: Point[], income: Point[], enemies: Unit[], enemyBase: Point, claimed: Set<string>): Point {
+/** How close an enemy must be to a base tile before the bot sends someone home. */
+const DEFEND_RADIUS = 6;
+const MAX_DEFENDERS = 2;
+
+const nearestEnemy = (p: Point, enemies: Unit[]) => Math.min(Infinity, ...enemies.map((e) => distance(p, e)));
+
+interface Targets {
+  posts: Point[];
+  income: Point[];
+  lostBase: Point[];
+  enemyBaseTiles: Point[];
+}
+
+function goalFor(u: Unit, t: Targets, enemies: Unit[], enemyBase: Point, claimed: Set<string>): Point {
   const free = (p: Point) => !claimed.has(`${p.x},${p.y}`);
-  const nearest = (ps: Point[]) => ps.filter(free).sort((a, b) => distance(u, a) - distance(u, b))[0];
   if (hasTrait(u.kind, "engineer")) {
-    const site = nearest(income);
+    const site = t.income.filter(free).sort((a, b) => distance(u, a) - distance(u, b))[0];
     if (site) return site;
   }
-  return nearest(posts) ?? [...enemies].sort((a, b) => distance(u, a) - distance(u, b))[0] ?? enemyBase;
+  // Weighted by distance less a bonus: retaking our own base matters most,
+  // then the enemy's base (it wins the game), then command posts.
+  const options: [Point, number][] = [
+    ...t.lostBase.filter(free).map((p): [Point, number] => [p, distance(u, p) - 6]),
+    ...t.enemyBaseTiles.filter(free).map((p): [Point, number] => [p, distance(u, p) - 3]),
+    ...t.posts.filter(free).map((p): [Point, number] => [p, distance(u, p)]),
+  ];
+  options.sort((a, b) => a[1] - b[1]);
+  return options[0]?.[0] ?? [...enemies].sort((a, b) => distance(u, a) - distance(u, b))[0] ?? enemyBase;
 }
 
 /** Higher is better: close to the goal, in cover, not standing in the open next to enemies. */
 function scoreTile(map: MapDef, p: Point, goal: Point, enemies: Unit[]): number {
   let score = -distance(p, goal);
+  // Standing on the goal itself is what takes (or holds) it: worth more than cover.
+  if (p.x === goal.x && p.y === goal.y) score += 2.5;
   score += coverAround(map, p) * 0.9;
   for (const e of enemies) {
     const d = distance(p, e);
@@ -162,9 +207,12 @@ function planSpawns(view: PlayerView, map: MapDef, mine: Unit[], claimed: Set<st
   const taken = (p: Point) => claimed.has(`${p.x},${p.y}`) || mine.some((u) => u.x === p.x && u.y === p.y);
   const centre = { x: Math.floor(map.width / 2), y: Math.floor(map.height / 2) };
   // Deploy as far forward as possible: tiles nearest the middle first.
-  const tiles = spawnTiles(map, { postOwners: view.postOwners }, seat)
+  // With enemies near, deploy closest to them instead: that is where help is needed.
+  const enemies = view.units.filter((u) => u.seat !== seat);
+  const urgency = (p: Point) => (enemies.length && nearestEnemy(p, enemies) <= DEFEND_RADIUS ? nearestEnemy(p, enemies) - 100 : distance(p, centre));
+  const tiles = spawnTiles(map, { postOwners: view.postOwners, baseOwners: view.baseOwners, seatCount: view.seats.length }, seat)
     .filter((t) => !taken(t))
-    .sort((a, b) => distance(a, centre) - distance(b, centre));
+    .sort((a, b) => urgency(a) - urgency(b));
   const kinds = new Map<UnitKind, number>();
   for (const u of mine) kinds.set(u.kind, (kinds.get(u.kind) ?? 0) + 1);
   const wantEngineer = map.income.some((_, i) => view.incomeOwners[i] !== seat) && !kinds.get("engineer");
@@ -206,6 +254,8 @@ function centreOf(points: Point[]): Point {
 export function chooseShot(view: PlayerView): BotAction {
   const map = getMap(view.mapId);
   const state = stateFromView(view);
+  // Enemies standing on base tiles we own are taking them: shoot those first.
+  const ownBase = baseTiles(map, view.seats.length).filter((_, i) => view.baseOwners[i] === view.seat);
   let best: { unitId: number; targetId: number; score: number } | null = null;
   for (const id of view.readyShooters) {
     const shooter = view.units.find((u) => u.id === id);
@@ -213,7 +263,8 @@ export function chooseShot(view: PlayerView): BotAction {
     for (const target of targetsFor(map, state, shooter)) {
       const p = previewShot(map, shooter, target);
       const kills = p.damage >= target.hp;
-      const score = p.chance * p.damage * (kills ? 2 : 1);
+      const raiding = ownBase.some((b) => b.x === target.x && b.y === target.y);
+      const score = p.chance * p.damage * (kills ? 2 : 1) * (raiding ? 3 : 1);
       if (!best || score > best.score) best = { unitId: shooter.id, targetId: target.id, score };
     }
   }

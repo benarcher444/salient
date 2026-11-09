@@ -1,0 +1,14 @@
+{
+  "name": "Commando",
+  "role": "Unseen until close. Devastating from behind.",
+  "cost": 140,
+  "hp": 80,
+  "move": 6,
+  "sight": 8,
+  "range": 4,
+  "optimal": 2,
+  "accuracy": 80,
+  "damage": 35,
+  "arc": 120,
+  "traits": ["stealth", "backstab"]
+}

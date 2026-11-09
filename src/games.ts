@@ -11,8 +11,9 @@ import { getMap, registerMap } from "./game/maps.js";
 import { streamFor } from "./game/rng.js";
 import { applyAction, newGame } from "./game/rules.js";
 import { chooseAction } from "./game/bot.js";
+import { FILE_TUNING, checkTuning, withTuning, type Tuning } from "./game/tuning.js";
 import { viewFor } from "./game/view.js";
-import type { Action, GameEvent, GameState, MapDef, Seat } from "./game/types.js";
+import { RuleError, type Action, type GameEvent, type GameState, type MapDef, type Seat } from "./game/types.js";
 
 export interface PlayerInfo {
   seat: Seat;
@@ -25,6 +26,8 @@ export interface LiveGame {
   game: Game;
   /** The map this game is played on: its own snapshot, under the key `game:<id>`. */
   map: MapDef;
+  /** The unit stats and rule numbers this game is played under: its own snapshot. */
+  tuning: Tuning;
   players: PlayerInfo[];
   /** null until every seat is filled and the game starts. */
   state: GameState | null;
@@ -67,12 +70,34 @@ export function mapFor(game: Pick<Game, "id" | "mapId" | "mapData">): MapDef {
   return map;
 }
 
-/** Replay a game's whole log. */
+/**
+ * The tuning a game is played under: the snapshot taken when it was created.
+ * Games from before snapshots use the files as they are now.
+ */
+export function tuningFor(game: Pick<Game, "rulesData">): Tuning {
+  return game.rulesData ? checkTuning(JSON.parse(game.rulesData) as Tuning) : FILE_TUNING;
+}
+
+/** Run rules code for this game under its own tuning. Every call into src/game for a game goes through here. */
+export const inGame = <T>(live: Pick<LiveGame, "tuning">, fn: () => T): T => withTuning(live.tuning, fn);
+
+/**
+ * Replay a game's whole log. A game stored under older *rules code* can hit
+ * an action the current rules refuse; the replay stops there rather than
+ * leave the game unopenable.
+ */
 function replay(game: Game, map: MapDef): { state: GameState; actionCount: number } {
   const rows = db.select().from(gameActions).where(eq(gameActions.gameId, game.id)).orderBy(asc(gameActions.seq)).all();
   let state = newGame(map.id, game.seatCount);
   for (const row of rows) {
-    state = applyAction(state, JSON.parse(row.payload) as Action, streamFor(game.seed, row.seq)).state;
+    if (state.phase === "over") break;
+    try {
+      state = applyAction(state, JSON.parse(row.payload) as Action, streamFor(game.seed, row.seq)).state;
+    } catch (e) {
+      if (!(e instanceof RuleError)) throw e;
+      console.warn(`game ${game.id}: replay stopped at action ${row.seq} (${e.message}); it was played under older rules`);
+      break;
+    }
   }
   return { state, actionCount: rows.length };
 }
@@ -84,8 +109,9 @@ export function loadGame(id: string): LiveGame | null {
   if (!game) return null;
   const players = loadPlayers(id);
   const map = mapFor(game);
-  const { state, actionCount } = game.startedAt ? replay(game, map) : { state: null, actionCount: 0 };
-  const live: LiveGame = { game, map, players, state, actionCount };
+  const tuning = tuningFor(game);
+  const { state, actionCount } = game.startedAt ? withTuning(tuning, () => replay(game, map)) : { state: null, actionCount: 0 };
+  const live: LiveGame = { game, map, tuning, players, state, actionCount };
   cache.set(id, live);
   return live;
 }
@@ -141,18 +167,20 @@ export function createGame(userId: number, map: MapDef, seatCount: number, bots 
   const botIds = bots ? botUserIds(seatCount - 1) : [];
   const mapData = JSON.stringify(map);
   const snapshot = mapFor({ id, mapId: map.id, mapData });
+  const rulesData = JSON.stringify(FILE_TUNING);
   sqlite.transaction(() => {
     db.insert(games)
       .values({
         id,
         mapId: map.id,
         mapData,
+        rulesData,
         seatCount,
         seed: crypto.randomBytes(16).toString("hex"),
         createdBy: userId,
         createdAt: now,
         updatedAt: now,
-        ...(bots ? { startedAt: now, ...summaryOf(newGame(snapshot.id, seatCount)) } : {}),
+        ...(bots ? { startedAt: now, ...summaryOf(withTuning(FILE_TUNING, () => newGame(snapshot.id, seatCount))) } : {}),
       })
       .run();
     db.insert(gamePlayers).values({ gameId: id, seat: 0, userId, joinedAt: now }).run();
@@ -177,7 +205,8 @@ export function joinGame(id: string, userId: number): JoinResult {
     const now = Date.now();
     db.insert(gamePlayers).values({ gameId: id, seat, userId, joinedAt: now }).run();
     if (taken.length + 1 === game.seatCount) {
-      db.update(games).set({ startedAt: now, updatedAt: now, ...summaryOf(newGame(mapFor(game).id, game.seatCount)) }).where(eq(games.id, id)).run();
+      const start = withTuning(tuningFor(game), () => newGame(mapFor(game).id, game.seatCount));
+      db.update(games).set({ startedAt: now, updatedAt: now, ...summaryOf(start) }).where(eq(games.id, id)).run();
     }
     return "joined";
   })();
@@ -195,7 +224,7 @@ export function leaveGame(id: string, userId: number): boolean {
   if (game.createdBy === userId) {
     db.delete(games).where(eq(games.id, id)).run();
     cache.delete(id);
-    for (const l of listeners.get(id) ?? []) l({ game, map: mapFor(game), players: [], state: null, actionCount: 0 }, []);
+    for (const l of listeners.get(id) ?? []) l({ game, map: mapFor(game), tuning: tuningFor(game), players: [], state: null, actionCount: 0 }, []);
     return true;
   }
   db.delete(gamePlayers).where(and(eq(gamePlayers.gameId, id), eq(gamePlayers.userId, userId))).run();
@@ -217,7 +246,8 @@ export function act(id: string, userId: number, clientAction: ClientAction): voi
   if (!player) throw new Error("not a player in this game");
   const action = { ...clientAction, seat: player.seat } as Action;
   const seq = live.actionCount;
-  const { state, events } = applyAction(live.state, action, streamFor(live.game.seed, seq));
+  const current = live.state;
+  const { state, events } = inGame(live, () => applyAction(current, action, streamFor(live.game.seed, seq)));
   const now = Date.now();
   sqlite.transaction(() => {
     db.insert(gameActions)
@@ -251,13 +281,14 @@ export function driveBots(id: string) {
   const live = loadGame(id);
   const state = live?.state;
   if (!live || !state || state.phase === "over") return;
-  const due = live.players.find((p) => p.isBot && chooseAction(viewFor(state, p.seat)) !== null);
+  const due = inGame(live, () => live.players.find((p) => p.isBot && chooseAction(viewFor(state, p.seat)) !== null));
   if (!due) return;
   const timer = setTimeout(() => {
     botTimers.delete(id);
-    const current = loadGame(id)?.state;
-    if (!current) return;
-    const choice = chooseAction(viewFor(current, due.seat));
+    const now = loadGame(id);
+    const current = now?.state;
+    if (!now || !current) return;
+    const choice = inGame(now, () => chooseAction(viewFor(current, due.seat)));
     if (!choice) return driveBots(id);
     try {
       act(id, due.userId, choice);

@@ -41,8 +41,9 @@ if (!hasGame) {
       moves: [],
       spawns: [
         { kind: "rifleman", ...b0[0]!, facing: 2 },
-        { kind: "engineer", ...b0[4]!, facing: 2 },
-        { kind: "scout", ...b0[2]!, facing: 2 },
+        { kind: "engineer", ...b0[1]!, facing: 2 },
+        // On the road row, so its route east below is clear.
+        { kind: "scout", ...b0[3]!, facing: 2 },
       ],
     },
   });

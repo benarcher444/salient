@@ -16,10 +16,12 @@ import {
   moveOrderFor,
   mySeat,
   targetsOf,
-  ticketsWarning,
+  baseWarning,
   unitById,
   type ClientState,
 } from "./state.js";
+import { baseTiles } from "../game/visibility.js";
+import type { SeatPublic } from "../game/view.js";
 
 const esc = (v: unknown) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -54,7 +56,7 @@ export function renderTopBar(s: ClientState) {
       const status = p.eliminated ? "Out" : v.phase === "planning" ? (p.ready ? "Ready" : "Planning") : turn ? "Firing" : "";
       return `<div class="score${p.seat === v.seat ? " you" : ""}${p.eliminated ? " out" : ""}${turn ? " turn" : ""}" ${seatStyle(p.seat)} title="${esc(playerName(s, p.seat))}">
   <span class="seat-dot"></span><span class="score-name">${esc(playerName(s, p.seat))}</span>
-  <span class="tickets${ticketsWarning(p.tickets) ? " low" : ""}" aria-label="${p.tickets} tickets">${p.tickets}</span>
+  ${baseChip(s, p)}
   ${status ? `<span class="score-status">${status}</span>` : ""}
 </div>`;
     })
@@ -64,6 +66,19 @@ export function renderTopBar(s: ClientState) {
     const left = canPlan(s) ? goldLeft(s) : v.gold;
     gold.innerHTML = `<span class="coin"></span><strong>${left}</strong><span class="faint">gold</span>`;
   } else gold.hidden = true;
+}
+
+/**
+ * A seat's hold on the game: base tiles owned out of its starting base, and
+ * units on the field. Out of base tiles and units means out of the game, so
+ * the last base tile shows as a warning.
+ */
+function baseChip(s: ClientState, p: SeatPublic): string {
+  const v = s.view!;
+  const home = baseTiles(s.map, v.seats.length).filter((t) => t.home === p.seat).length;
+  const warn = !p.eliminated && baseWarning(p.baseTiles);
+  const label = `${p.baseTiles} of ${home} base tiles, ${p.units} unit${p.units === 1 ? "" : "s"}`;
+  return `<span class="base-chip${warn ? " low" : ""}" title="${label}" aria-label="${label}">Base ${p.baseTiles}/${home}<span class="faint"> · ${p.units}u</span></span>`;
 }
 
 export function renderPanel(s: ClientState): string {
@@ -103,7 +118,7 @@ function statusBlock(s: ClientState): string {
     return `<div class="panel-section status status-over"><h2>${title}</h2><p>${sub}</p><a class="btn btn-primary" href="/">Back to your games</a></div>`;
   }
   if (seat !== null && v.seats[seat]?.eliminated) {
-    return `<div class="panel-section status"><h2>You're out</h2><p>Your tickets ran out. You can keep watching your own side's view.</p></div>`;
+    return `<div class="panel-section status"><h2>You're out</h2><p>You lost your last base tile and your last unit. You can keep watching your own side's view.</p></div>`;
   }
   if (v.phase === "planning") {
     const waiting = v.seats.filter((p) => !p.eliminated && !p.ready && p.seat !== seat).map((p) => esc(playerName(s, p.seat)));

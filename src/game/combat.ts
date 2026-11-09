@@ -37,9 +37,6 @@ export const BLOCK_TEXT: Record<ShotBlock, string> = {
   same_side: "Friendly",
 };
 
-const MIN_CHANCE = 5;
-const MAX_CHANCE = 95;
-
 /** Which side of the target the shot arrives from. */
 export function flankOf(shooter: Point, target: Pick<Unit, "x" | "y" | "facing">): Flank {
   const theta = angleBetweenDeg(facingAngle(target.facing), bearing(target, shooter));
@@ -80,8 +77,8 @@ export function previewShot(map: MapDef, shooter: Unit, target: Unit): ShotPrevi
   }
 
   if (hasTrait(shooter.kind, "steady")) {
-    if (shooter.moved) modifiers.push({ label: "Moved this round", factor: 0.5 });
-    if (d < 3) modifiers.push({ label: "Too close for the scope", factor: 0.5 });
+    if (shooter.moved) modifiers.push({ label: "Moved this round", factor: RULES.traits.steadyPenalty });
+    if (d < RULES.traits.steadyMinRange) modifiers.push({ label: "Too close for the scope", factor: RULES.traits.steadyPenalty });
   }
 
   // Cover: something right next to the target, on the shooter's side of the
@@ -89,7 +86,7 @@ export function previewShot(map: MapDef, shooter: Unit, target: Unit): ShotPrevi
   // shooter costs nothing (it is leaning out of that window), and anything in
   // between only partly obstructs. This is the old prototype's barrier rule: a
   // window near the shooter costs little, one near the target a lot.
-  const ignoresCover = hasTrait(shooter.kind, "closeQuarters") && d <= 2.5;
+  const ignoresCover = hasTrait(shooter.kind, "closeQuarters") && d <= RULES.traits.closeQuartersRange;
   const chebyshev = (a: Point, b: Point) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
   let inCover = TERRAIN[terrainAt(map, target.x, target.y)].cover;
   let obstructions = 0;
@@ -97,12 +94,12 @@ export function previewShot(map: MapDef, shooter: Unit, target: Unit): ShotPrevi
     if (chebyshev(o.at, target) <= 1) inCover = true;
     else if (chebyshev(o.at, shooter) > 1) obstructions++;
   }
-  if (inCover && !ignoresCover) modifiers.push({ label: "Target in cover", factor: 0.6 });
+  if (inCover && !ignoresCover) modifiers.push({ label: "Target in cover", factor: RULES.coverFactor });
   if (inCover && ignoresCover) modifiers.push({ label: "Cover ignored up close", factor: 1 });
-  for (let i = 0; i < Math.min(obstructions, 3); i++) modifiers.push({ label: "Partly obstructed", factor: 0.85 });
+  for (let i = 0; i < Math.min(obstructions, 3); i++) modifiers.push({ label: "Partly obstructed", factor: RULES.obstructionFactor });
 
   for (const m of modifiers) chance *= m.factor;
-  chance = Math.min(MAX_CHANCE, Math.max(MIN_CHANCE, Math.round(chance)));
+  chance = Math.min(RULES.maxHitChance, Math.max(RULES.minHitChance, Math.round(chance)));
 
   return {
     possible: true,
@@ -115,13 +112,12 @@ export function previewShot(map: MapDef, shooter: Unit, target: Unit): ShotPrevi
   };
 }
 
-export const FLANK_MULTIPLIER: Record<Flank, number> = { front: 1, side: 1.25, rear: 1.5 };
-
 export function damageFor(shooter: Unit, target: Unit, flank: Flank): number {
-  let dmg = UNITS[shooter.kind].damage * FLANK_MULTIPLIER[flank];
-  if (flank === "rear" && hasTrait(shooter.kind, "backstab")) dmg = UNITS[shooter.kind].damage * 2.5;
-  if (flank === "front" && hasTrait(target.kind, "shield")) dmg *= 0.4;
-  if (hasTrait(target.kind, "armoured")) dmg *= 0.8;
+  const t = RULES.traits;
+  let dmg = UNITS[shooter.kind].damage * RULES.flank[flank];
+  if (flank === "rear" && hasTrait(shooter.kind, "backstab")) dmg = UNITS[shooter.kind].damage * t.backstabMultiplier;
+  if (flank === "front" && hasTrait(target.kind, "shield")) dmg *= t.shieldFrontDamage;
+  if (hasTrait(target.kind, "armoured")) dmg *= t.armouredDamage;
   return Math.round(dmg);
 }
 

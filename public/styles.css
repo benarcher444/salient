@@ -376,8 +376,9 @@ body.bare { height: 100dvh; overflow: hidden; }
 .score.turn { box-shadow: 0 0 0 2px color-mix(in srgb, var(--seat) 45%, transparent); }
 .score.out { opacity: 0.5; text-decoration: line-through; }
 .score-name { font-weight: 650; max-width: 9em; overflow: hidden; text-overflow: ellipsis; }
-.tickets { font-weight: 850; font-variant-numeric: tabular-nums; padding: 0 6px; border-radius: 6px; background: color-mix(in srgb, var(--seat) 16%, var(--surface)); }
-.tickets.low { color: var(--danger); }
+.base-chip { font-weight: 800; font-variant-numeric: tabular-nums; padding: 0 6px; border-radius: 6px; background: color-mix(in srgb, var(--seat) 16%, var(--surface)); white-space: nowrap; }
+.base-chip .faint { font-weight: 600; }
+.base-chip.low { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, var(--surface)); }
 .score-status { font-size: 0.72rem; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.05em; }
 .gold-pill { display: flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; background: var(--warn-soft); border: 1px solid var(--warn-border); font-size: 0.85rem; white-space: nowrap; }
 .gold-pill strong { font-variant-numeric: tabular-nums; }

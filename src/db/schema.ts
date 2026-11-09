@@ -52,6 +52,12 @@ export const games = sqliteTable("games", {
    * snapshots, which use the built-in map named by map_id.
    */
   mapData: text("map_data"),
+  /**
+   * The tuning (tuning/*.json: unit stats and rule numbers) as it was when the
+   * game was created, as JSON, for the same reason: the log replays under the
+   * numbers it was played with. Null for older games, which use the files.
+   */
+  rulesData: text("rules_data"),
 });
 
 /** Maps people have made in the editor. `data` is the MapDef as JSON. */

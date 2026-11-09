@@ -8,7 +8,8 @@ import type { MapDef, Point } from "./types.js";
 export const MAP_LIMITS = {
   minSize: 12,
   maxSize: 40,
-  maxBaseTiles: 12,
+  /** Small bases: every tile is worth capturing, and a side is out when it has none left and no units. */
+  maxBaseTiles: 6,
   maxPosts: 9,
   maxIncome: 9,
   minIncomeValue: 5,
@@ -35,7 +36,7 @@ export function checkMap(map: MapDef): string[] {
   }
 
   // Sites
-  if (map.posts.length === 0) problems.push("Add at least one command post: tickets bleed from holding fewer of them.");
+  if (map.posts.length === 0) problems.push("Add at least one command post: posts are the forward spawn points.");
   if (map.posts.length > MAP_LIMITS.maxPosts) problems.push(`There are ${map.posts.length} command posts; the most is ${MAP_LIMITS.maxPosts}.`);
   if (map.income.length > MAP_LIMITS.maxIncome) problems.push(`There are ${map.income.length} income sites; the most is ${MAP_LIMITS.maxIncome}.`);
   for (const p of map.posts) if (!standable(p)) problems.push(`The command post at ${at(p)} can't be stood on.`);

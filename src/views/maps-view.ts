@@ -117,7 +117,7 @@ export function editorPage(user: User, entry: MapEntry): Html {
         <h3 class="panel-h">Sites</h3>
         <div class="tools">
           ${tool("base", "Base", "sw-base", "Where a seat deploys. Pick the seat below")}
-          ${tool("post", "Command post", "sw-post", "Captured posts become spawn points; holding fewer bleeds tickets")}
+          ${tool("post", "Command post", "sw-post", "Captured posts become forward spawn points")}
           ${tool("income", "Income site", "sw-income", "+25 gold a round to whoever holds it. Engineers capture these")}
           ${tool("clear-site", "Clear site", "sw-clear", "Remove bases, posts and income sites")}
         </div>

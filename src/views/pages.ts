@@ -168,24 +168,25 @@ export function rulesPage(user: User | null): Html {
 <div class="rules stack">
   <section class="card"><div class="card-body prose">
     <h2>The goal</h2>
-    <p>Every side starts with <strong>${RULES.startTickets} tickets</strong>. You lose ${RULES.ticketsPerDeath} each time one of your units dies, and at the end of every round you bleed ${RULES.bleedPerPost} for each command post the strongest opponent holds more than you. Run out and you're out. The last side with tickets wins; if ${RULES.roundLimit} rounds pass, the most tickets wins.</p>
+    <p><strong>Take their base.</strong> Every side starts with a small base: a few tiles it deploys onto. Base tiles are captured one at a time, like command posts: end a round on an enemy's base tile and it turns neutral; end the next round there and it's yours, and you can deploy on it. A side with <strong>no base tiles and no units left is out</strong>. The last side standing wins. If ${RULES.roundLimit} rounds pass, it's a draw.</p>
     <h2>A round</h2>
     <ol class="steps">
-      <li><strong>Plan.</strong> Everyone plans at the same time, in secret. Buy units onto your base or any command post you hold, and give each unit a route and a facing. Lock in when ready.</li>
+      <li><strong>Plan.</strong> Everyone plans at the same time, in secret. Buy units onto any base tile or command post you hold, and give each unit a route and a facing. Lock in when ready.</li>
       <li><strong>Move.</strong> When the last player locks in, all routes play out together, one step at a time. Two units heading for the same tile both stop; so does anyone who walks into a unit they couldn't see.</li>
       <li><strong>Attack.</strong> Players take turns firing one unit at a time. The first shot rotates each round. Units with nothing in reach are skipped automatically.</li>
-      <li><strong>Upkeep.</strong> Captures, income, healing and ticket bleed.</li>
+      <li><strong>Upkeep.</strong> Captures (base tiles, posts, income sites), income and healing. Anyone left with no base tiles and no units is knocked out.</li>
     </ol>
     <h2>Shooting</h2>
     <p>A unit can shoot what is inside its <strong>firing arc</strong> (the wedge in front of it), within range, with a clear line. You see the chance to hit before you fire. Accuracy falls off past a unit's best range. A target behind cover — a crate, a low wall or window, or standing in woods — is harder to hit; cover right next to the shooter costs nothing.</p>
-    <p><strong>Facing matters.</strong> Shots into a unit's side do 1.25× damage and into its back 1.5×. Ten per cent of hits are critical, for 1.5× more.</p>
+    <p><strong>Facing matters.</strong> Shots into a unit's side do ${RULES.flank.side}× damage and into its back ${RULES.flank.rear}×. ${Math.round(RULES.critChance * 100)} per cent of hits are critical, for ${RULES.critMultiplier}× more.</p>
     <h2>The map</h2>
     <ul>
       <li><strong>Walls</strong> stop movement and sight. <strong>Windows and low walls</strong> stop movement but you can see and shoot through them. Doorways are open.</li>
       <li><strong>Rock</strong> blocks both; <strong>water</strong> and <strong>crates</strong> block movement only; <strong>woods</strong> cost double to walk through and give cover.</li>
-      <li><strong>Command posts</strong> are captured by ending a round on them: an enemy's becomes neutral, a neutral one becomes yours. You can deploy on and beside posts you hold.</li>
+      <li><strong>Command posts</strong> are captured by ending a round on them: an enemy's becomes neutral, a neutral one becomes yours. You can deploy on and beside posts you hold. Posts are forward spawn points; they don't keep you in the game on their own.</li>
+      <li><strong>Base tiles</strong> are captured the same way, one tile at a time, and become spawn points for whoever holds them. A unit standing on its own base tile blocks the capture.</li>
       <li><strong>Income sites</strong> pay +25 gold a round, on top of everyone's +${RULES.baseIncome}. Only <strong>engineers</strong> can capture them.</li>
-      <li><strong>Fog of war:</strong> you only see what your units, base and posts can see.</li>
+      <li><strong>Fog of war:</strong> you only see what your units and the base tiles and posts you hold can see.</li>
     </ul>
     <h2>Reading the board</h2>
     <p>Each class has its own shape, and the white arrow in front of a unit shows which way it faces. Point at any unit, yours or an enemy's, to see its firing arc.</p>

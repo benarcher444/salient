@@ -11,6 +11,8 @@ deployment); where this file differs, this file wins, and says why.
 **Salient is a turn-based tactics game for two to four players in the
 browser.** Each side buys units onto its base, captures command posts (which
 become forward spawn points) and income sites, and fights through fog of war.
+Bases are captured tile by tile; a side with no base tiles and no units left
+is out, and the last side standing wins.
 Every round, everyone plans their moves secretly and at the same time; moves
 resolve together; then players take turns firing one unit at a time.
 
@@ -64,7 +66,10 @@ src/game/        The rules. Pure TypeScript, no Node or DOM imports: the server
                  (fog, spawn tiles), rules (the round structure, applyAction),
                  view (what one seat may know), maps, units, constants, rng,
                  bot (the computer opponent), seats, glyphs (class symbols and
-                 silhouettes), keys (the keyboard controls list).
+                 silhouettes), keys (the keyboard controls list), tuning
+                 (loads and checks /tuning, the active numbers).
+tuning/          The balance numbers as JSON: units/<class>.json, rules.json,
+                 and a README explaining every field. Edited by hand.
 src/client/      The browser. game.ts (the battle: controller, socket, taps),
                  board.ts (battle drawing), editor.ts (the map editor),
                  art.ts (the cached map art), sites.ts (posts and income
@@ -195,11 +200,33 @@ narrow windows.
 **Theme on the account**, stamped into `<html>` at render: no flash. The
 battle page re-reads the palette when the device scheme changes.
 
-**Economy and tickets, Battlefront-style.** 40 tickets each; −2 per unit lost;
-at round end each seat bleeds 2 per command post the strongest opponent holds
-beyond its own; out at zero; most tickets at round 30 wins. 300 gold to start,
-+50 a round, +25 per income site. All in `src/game/constants.ts`; unit stats
-in `src/game/units.ts`. Use `scripts/simulate.ts` to see what a change does.
+**Winning is taking bases, tile by tile.** Chosen with the owner, replacing
+an earlier Battlefront-style ticket system (no tickets, no bleed). Every base
+tile has an owner (`state.baseOwners`, indexed by `baseTiles(map,
+seatCount)`: the playing seats' bases flattened in seat order) and is
+captured exactly like a command post, by the same `capture` helper in
+`endRound`: a unit ending a round on it moves it one step towards its side
+(theirs → neutral → yours). A captured base tile is a spawn tile for its new
+owner; a lost one is not for the old. A side is out when it owns **no base
+tiles and has no units** (`knockedOut`): checked at round end, and at once
+when its last unit is shot. Command posts don't keep you in. Last side
+standing wins; round 30 is a draw. Bases are small (4 tiles on the built-in
+maps, at most 6 in the editor) so every tile matters.
+
+**Balance numbers live in `tuning/`, as JSON, and every game snapshots
+them.** The owner wanted to tinker with stats without code. `tuning.ts`
+imports the files (so the browser bundle gets them too and `src/game` stays
+free of `fs`) and checks them with a small hand-written checker that names
+the file and field; a bad file stops the server at boot and fails `npm
+test`. `UNITS` and `RULES` are the *active* tuning: plain objects whose
+contents `withTuning(t, fn)` swaps around a synchronous rules call. Because
+a game is its action log replayed, each game stores the tuning it was
+created under (`games.rules_data`, like `map_data`); `games.ts` runs every
+rules call for a game through `inGame(live, fn)`, and the battle page sends
+the snapshot so the browser's hit chances match. Games from before snapshots
+use the files. **Any new server-side call into `src/game` for a game must go
+through `inGame`**, or it reads the files' numbers instead of the game's.
+Use `scripts/simulate.ts` to see what a change does.
 
 ## Traps worth remembering
 
@@ -253,11 +280,15 @@ the server after `seed`/`unseed`, or it serves games that no longer exist.
 
 ## Adding things
 
-- **A unit class:** an entry in `UNITS` (`src/game/units.ts`), its kind in
-  `UnitKind` (`types.ts`), a glyph, a shape and a size in `glyphs.ts` (a
-  shape no other class uses), and if it has a new trait,
-  the rule where the trait applies (`combat.ts` or `rules.ts`) plus
-  `TRAIT_TEXT`. The shop, rules page, bot and panel pick it up from there.
+- **A unit class:** a file in `tuning/units/`, its import and `UNIT_KINDS`
+  entry in `src/game/tuning.ts`, its kind in `UnitKind` (`types.ts`), a glyph,
+  a shape and a size in `glyphs.ts` (a shape no other class uses), and if it has a new trait, the trait in `TRAITS`
+  (`tuning.ts`), the rule where it applies (`combat.ts` or `rules.ts`), any
+  number in `rules.json` (and the checker), plus `traitText` in `units.ts`.
+  The shop, rules page, bot and panel pick it up from there.
+- **A tuning number:** a field in `tuning/rules.json`, its type and range in
+  `tuning.ts`, the rule reading `RULES.<field>`, and a row in
+  `tuning/README.md`.
 - **A built-in map:** a builder block in `src/game/maps.ts`, added to `MAPS`.
   Two-seat maps are rotated a half turn, four-seat maps must be square. Run
   `npm test`: it checks symmetry and runs `checkMap`. (Or make it in the
@@ -270,7 +301,9 @@ the server after `seed`/`unseed`, or it serves games that no longer exist.
   `applyAt` built from the primitives so symmetry and undo come for free.
 - **A rule change:** `src/game/rules.ts` or `combat.ts`, a test in
   `scripts/test-rules.ts`, then `npx tsx scripts/simulate.ts` to see it play.
-  Remember stored games replay their logs under the new rules.
+  Stored games replay their logs under the new rules *code* (their numbers
+  are snapshotted, their code is not); a replay that hits an action the new
+  code refuses stops there with a warning rather than crash the game.
 
 ## Verification before calling a change done
 

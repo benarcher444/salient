@@ -6,7 +6,7 @@ import { currentUser, requireUser } from "../context.js";
 import { mapForNewGame, listMaps } from "../saved-maps.js";
 import { ERROR_TEXT, RuleError, type Facing, type Orders } from "../game/types.js";
 import { eventsFor, viewFor, type PlayerView } from "../game/view.js";
-import { act, createGame, gamesFor, joinGame, leaveGame, loadGame, openGames, subscribe, type ClientAction, type LiveGame } from "../games.js";
+import { act, createGame, gamesFor, inGame, joinGame, leaveGame, loadGame, openGames, subscribe, type ClientAction, type LiveGame } from "../games.js";
 import { clientMessage } from "../protocol.js";
 import { battlePage } from "../views/game-view.js";
 import { lobbyPage, notFoundPage, waitingRoom } from "../views/pages.js";
@@ -89,7 +89,8 @@ export function gameRoutes(app: FastifyInstance) {
       const seat = seatOf(live);
       if (!live.state) return send({ type: "lobby", players: live.players.map((p) => ({ seat: p.seat, name: p.name })) });
       if (seat === null && live.state.phase !== "over") return socket.close(4403, "not a player");
-      const view = viewFor(live.state, seat);
+      const state = live.state;
+      const view = inGame(live, () => viewFor(state, seat));
       send({
         type: "state",
         view,

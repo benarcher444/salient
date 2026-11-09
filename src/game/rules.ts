@@ -8,7 +8,7 @@ import { facingToward, samePoint } from "./grid.js";
 import { getMap } from "./maps.js";
 import { validatePath } from "./movement.js";
 import { UNITS, UNIT_KINDS, hasTrait } from "./units.js";
-import { isSpawnTile, unitVisibleTo, visibleTiles } from "./visibility.js";
+import { baseTiles, baseTilesOwned, isSpawnTile, unitVisibleTo, visibleTiles } from "./visibility.js";
 import {
   RuleError,
   type Action,
@@ -34,13 +34,13 @@ export function newGame(mapId: string, seatCount: number): GameState {
     seats: Array.from({ length: seatCount }, (_, seat) => ({
       seat,
       gold: RULES.startGold,
-      tickets: RULES.startTickets,
       eliminated: false,
     })),
     units: [],
     nextUnitId: 1,
     postOwners: map.posts.map(() => null),
     incomeOwners: map.income.map(() => null),
+    baseOwners: baseTiles(map, seatCount).map((t) => t.home),
     orders: Array.from({ length: seatCount }, () => null),
     attackTurn: null,
     actedUnitIds: [],
@@ -85,7 +85,6 @@ export function applyAction(prev: GameState, action: Action, roll: () => number)
       passAttackTurn(map, state, action.seat, events);
       break;
     case "resign":
-      seat.tickets = 0;
       eliminate(state, action.seat, events);
       if (!checkWinner(state, events)) {
         if (state.phase === "planning") maybeResolvePlanning(map, state, events);
@@ -367,7 +366,6 @@ function attack(
     if (target.hp <= 0) {
       killed = true;
       state.units = state.units.filter((u) => u.id !== target.id);
-      state.seats[target.seat]!.tickets -= RULES.ticketsPerDeath;
     }
   }
   events.push({
@@ -384,7 +382,8 @@ function attack(
     damage: result.damage,
     killed,
   });
-  if (killed && state.seats[target.seat]!.tickets <= 0) {
+  // Losing your last unit with no base tiles left knocks you out at once.
+  if (killed && knockedOut(state, target.seat)) {
     eliminate(state, target.seat, events);
     if (checkWinner(state, events)) return;
   }
@@ -401,26 +400,23 @@ function passAttackTurn(map: MapDef, state: GameState, seat: Seat, events: GameE
 function endRound(map: MapDef, state: GameState, events: GameEvent[]) {
   const unitAt = (p: Point) => state.units.find((u) => u.x === p.x && u.y === p.y);
 
-  // Captures. Standing on a site you do not own takes it one step towards
-  // you: an enemy's becomes neutral, a neutral one becomes yours.
-  map.posts.forEach((p, i) => {
+  // Captures. A unit standing on a site its side does not own takes it one
+  // step towards its side: an enemy's becomes neutral, a neutral one becomes
+  // theirs. One unit per tile, so a capturer is always alone on the tile, and
+  // a defender standing on it blocks it. Base tiles work exactly like command
+  // posts; income sites need an engineer.
+  const capture = (site: "post" | "income" | "base", owners: (Seat | null)[], i: number, p: Point, engineersOnly = false) => {
     const u = unitAt(p);
-    if (!u) return;
-    const owner = state.postOwners[i] ?? null;
+    if (!u || (engineersOnly && !hasTrait(u.kind, "engineer"))) return;
+    const owner = owners[i] ?? null;
     if (owner === u.seat) return;
     const next = owner === null ? u.seat : null;
-    state.postOwners[i] = next;
-    events.push({ type: "capture", site: "post", index: i, from: owner, to: next });
-  });
-  map.income.forEach((p, i) => {
-    const u = unitAt(p);
-    if (!u || !hasTrait(u.kind, "engineer")) return;
-    const owner = state.incomeOwners[i] ?? null;
-    if (owner === u.seat) return;
-    const next = owner === null ? u.seat : null;
-    state.incomeOwners[i] = next;
-    events.push({ type: "capture", site: "income", index: i, from: owner, to: next });
-  });
+    owners[i] = next;
+    events.push({ type: "capture", site, index: i, from: owner, to: next });
+  };
+  map.posts.forEach((p, i) => capture("post", state.postOwners, i, p));
+  map.income.forEach((p, i) => capture("income", state.incomeOwners, i, p, true));
+  baseTiles(map, state.seatCount).forEach((p, i) => capture("base", state.baseOwners, i, p));
 
   for (const s of state.seats) {
     if (s.eliminated) continue;
@@ -443,25 +439,13 @@ function endRound(map: MapDef, state: GameState, events: GameEvent[]) {
     u.hp = Math.min(max, u.hp + heal);
   }
 
-  const held = (seat: Seat) => state.postOwners.filter((o) => o === seat).length;
-  const alive = state.seats.filter((s) => !s.eliminated);
-  for (const s of alive) {
-    const strongest = Math.max(0, ...alive.filter((o) => o.seat !== s.seat).map((o) => held(o.seat)));
-    const behind = strongest - held(s.seat);
-    if (behind > 0) {
-      const lost = behind * RULES.bleedPerPost;
-      s.tickets -= lost;
-      events.push({ type: "bleed", seat: s.seat, tickets: lost });
-    }
-  }
-  for (const s of alive) if (s.tickets <= 0) eliminate(state, s.seat, events);
+  // A side with no base tiles and no units left is out.
+  for (const s of state.seats) if (!s.eliminated && knockedOut(state, s.seat)) eliminate(state, s.seat, events);
   if (checkWinner(state, events)) return;
 
+  // Nobody took the field in time: a draw.
   if (state.round >= RULES.roundLimit) {
-    const standing = state.seats.filter((s) => !s.eliminated);
-    const best = Math.max(...standing.map((s) => s.tickets));
-    const leaders = standing.filter((s) => s.tickets === best);
-    finish(state, leaders.length === 1 ? leaders[0]!.seat : null, events);
+    finish(state, null, events);
     return;
   }
 
@@ -481,10 +465,14 @@ function eliminate(state: GameState, seat: Seat, events: GameEvent[]) {
   const s = state.seats[seat]!;
   if (s.eliminated) return;
   s.eliminated = true;
-  s.tickets = Math.max(0, s.tickets);
   state.units = state.units.filter((u) => u.seat !== seat);
   state.orders[seat] = null;
   events.push({ type: "eliminated", seat });
+}
+
+/** Out of the game: owns no base tile and has no unit on the field. Command posts don't keep you in. */
+export function knockedOut(state: Pick<GameState, "baseOwners" | "units">, seat: Seat): boolean {
+  return baseTilesOwned(state, seat) === 0 && !state.units.some((u) => u.seat === seat);
 }
 
 /** Ends the game if one seat (or none) is left standing. Returns whether it ended. */
