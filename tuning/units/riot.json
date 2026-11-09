@@ -1,0 +1,14 @@
+{
+  "name": "Riot",
+  "role": "Shield bearer. Leads the push into a building.",
+  "cost": 130,
+  "hp": 130,
+  "move": 4,
+  "sight": 7,
+  "range": 3,
+  "optimal": 2,
+  "accuracy": 80,
+  "damage": 25,
+  "arc": 120,
+  "traits": ["shield"]
+}

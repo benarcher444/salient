@@ -22,6 +22,13 @@
       "when": 1794177166315,
       "tag": "0002_custom_maps",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1794259033858,
+      "tag": "0003_tuning_snapshot",
+      "breakpoints": true
     }
   ]
 }

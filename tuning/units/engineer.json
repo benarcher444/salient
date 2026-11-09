@@ -1,0 +1,14 @@
+{
+  "name": "Engineer",
+  "role": "Captures income sites and patches up neighbours.",
+  "cost": 90,
+  "hp": 90,
+  "move": 5,
+  "sight": 7,
+  "range": 5,
+  "optimal": 3,
+  "accuracy": 65,
+  "damage": 20,
+  "arc": 120,
+  "traits": ["engineer", "medic"]
+}

@@ -210,7 +210,7 @@ const crossroads = (() => {
   b.symmetric((p) => {
     p.rect(0, 8, 13, 1, "road");
     p.rect(12, 0, 1, 9, "road");
-    p.base(0, 6, 2, 5);
+    p.base(0, 7, 2, 2);
 
     p.building(4, 1, 7, 5, { doors: ["s1", "e3"], windows: ["n2", "n5", "w2", "s4"] });
     p.vwall(8, 1, 2);
@@ -244,7 +244,7 @@ const riverside = (() => {
     p.rect(9, 3, 7, 1, "road");
     p.hwall(11, 3, 3, "window");
     p.hwall(11, 4, 3, "window");
-    p.base(0, 6, 2, 5);
+    p.base(0, 7, 2, 2);
 
     p.building(4, 1, 5, 4, { doors: ["e2", "s1"], windows: ["n1", "n3", "w1"] });
     p.post(6, 2);
@@ -276,7 +276,7 @@ const fourCorners = (() => {
   });
   b.symmetric((p) => {
     p.rect(12, 0, 1, 12, "road");
-    p.base(1, 1, 3, 2);
+    p.base(1, 1, 2, 2);
 
     p.building(5, 5, 5, 4, { doors: ["s2", "e1"], windows: ["n1", "n3", "w2", "e3"] });
     p.post(7, 6);

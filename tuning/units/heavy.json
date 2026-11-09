@@ -1,0 +1,14 @@
+{
+  "name": "Heavy",
+  "role": "Slow, armoured, hits hard down a narrow arc.",
+  "cost": 160,
+  "hp": 160,
+  "move": 3,
+  "sight": 7,
+  "range": 8,
+  "optimal": 5,
+  "accuracy": 65,
+  "damage": 45,
+  "arc": 90,
+  "traits": ["armoured"]
+}

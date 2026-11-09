@@ -1,0 +1,28 @@
+{
+  "startGold": 300,
+  "baseIncome": 50,
+  "healPerRound": 10,
+  "medicHeal": 10,
+  "critChance": 0.1,
+  "critMultiplier": 1.5,
+  "roundLimit": 30,
+  "siteSight": 2,
+  "minHitChance": 5,
+  "maxHitChance": 95,
+  "coverFactor": 0.6,
+  "obstructionFactor": 0.85,
+  "flank": {
+    "front": 1,
+    "side": 1.25,
+    "rear": 1.5
+  },
+  "traits": {
+    "armouredDamage": 0.8,
+    "shieldFrontDamage": 0.4,
+    "backstabMultiplier": 2.5,
+    "stealthRange": 3,
+    "steadyPenalty": 0.5,
+    "steadyMinRange": 3,
+    "closeQuartersRange": 2.5
+  }
+}

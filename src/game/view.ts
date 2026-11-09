@@ -2,13 +2,16 @@
 // never the full state, so fog of war cannot be defeated by reading the
 // network traffic. (The old prototype sent every unit to every client.)
 import { readyShooters } from "./rules.js";
-import { unitVisibleTo, visibleTiles } from "./visibility.js";
+import { baseTilesOwned, unitVisibleTo, visibleTiles } from "./visibility.js";
 import { getMap } from "./maps.js";
 import type { GameEvent, GameState, Orders, Phase, Seat, Unit } from "./types.js";
 
 export interface SeatPublic {
   seat: Seat;
-  tickets: number;
+  /** Base tiles this seat owns, of any base. */
+  baseTiles: number;
+  /** Units it has on the field (a count only, never where). */
+  units: number;
   eliminated: boolean;
   /** Planning phase: has this seat locked in its orders? */
   ready: boolean;
@@ -28,6 +31,8 @@ export interface PlayerView {
   visible: number[];
   postOwners: (Seat | null)[];
   incomeOwners: (Seat | null)[];
+  /** Owner of every base tile, by index into baseTiles(map, seats.length). Public, like posts. */
+  baseOwners: (Seat | null)[];
   /** The viewer's own submitted orders this round, if any. */
   myOrders: Orders | null;
   attackTurn: Seat | null;
@@ -54,7 +59,8 @@ export function viewFor(state: GameState, seat: Seat | null): PlayerView {
     phase: state.phase,
     seats: state.seats.map((s) => ({
       seat: s.seat,
-      tickets: s.tickets,
+      baseTiles: baseTilesOwned(state, s.seat),
+      units: state.units.filter((u) => u.seat === s.seat).length,
       eliminated: s.eliminated,
       ready: state.phase === "planning" && state.orders[s.seat] !== null,
     })),
@@ -63,6 +69,7 @@ export function viewFor(state: GameState, seat: Seat | null): PlayerView {
     visible: [...tiles].sort((a, b) => a - b),
     postOwners: [...state.postOwners],
     incomeOwners: [...state.incomeOwners],
+    baseOwners: [...state.baseOwners],
     myOrders: seat === null ? null : structuredClone(state.orders[seat] ?? null),
     attackTurn: state.attackTurn,
     acted: state.actedUnitIds.filter((id) => units.some((u) => u.id === id && u.seat === seat)),
@@ -75,7 +82,7 @@ export function viewFor(state: GameState, seat: Seat | null): PlayerView {
 /**
  * The events a seat gets to see. It sees everything that happens to its own
  * units, shots where it can see either end (before or after), and all the
- * public bookkeeping: captures, income, bleed, rounds. Enemy movement it
+ * public bookkeeping: captures, income, knockouts, rounds. Enemy movement it
  * learns by the units appearing where they now are.
  */
 export function eventsFor(
@@ -117,11 +124,12 @@ export function stateFromView(v: PlayerView): GameState {
     seatCount: v.seats.length,
     round: v.round,
     phase: v.phase,
-    seats: v.seats.map((p) => ({ seat: p.seat, gold: p.seat === v.seat ? v.gold : 0, tickets: p.tickets, eliminated: p.eliminated })),
+    seats: v.seats.map((p) => ({ seat: p.seat, gold: p.seat === v.seat ? v.gold : 0, eliminated: p.eliminated })),
     units: v.units,
     nextUnitId: 0,
     postOwners: v.postOwners,
     incomeOwners: v.incomeOwners,
+    baseOwners: v.baseOwners,
     orders: v.seats.map(() => null),
     attackTurn: v.attackTurn,
     actedUnitIds: v.acted,

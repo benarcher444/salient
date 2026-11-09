@@ -15,6 +15,8 @@ import { UNITS } from "../src/game/units.js";
 import { viewFor } from "../src/game/view.js";
 import { RuleError, type Action, type GameState, type MapDef, type Point, type Unit, type UnitKind } from "../src/game/types.js";
 import { RULES } from "../src/game/constants.js";
+import { baseTiles } from "../src/game/visibility.js";
+import { FILE_TUNING, TuningError, checkTuning, withTuning, type Tuning } from "../src/game/tuning.js";
 
 let failures = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -386,7 +388,7 @@ section("Attack turns");
   r = applyAction(r.state, { type: "attack", seat: 0, unitId: 1, targetId: 4 }, roll(0.2));
   const shot = r.events.find((e) => e.type === "shot");
   check("a hit kills a wounded scout", shot?.type === "shot" && shot.hit && shot.killed && !at(r.state, 4));
-  check("a death costs tickets", r.state.seats[1]!.tickets === RULES.startTickets - RULES.ticketsPerDeath);
+  check("losing a unit with base tiles left keeps you in", !r.state.seats[1]!.eliminated);
   check("and the turn passes", r.state.attackTurn === 1);
   const twice = codeOf(() => applyAction(r.state, { type: "attack", seat: 0, unitId: 1, targetId: 3 }, roll(0)));
   check("you can't act out of turn", twice === "not_your_turn", twice);
@@ -407,10 +409,10 @@ section("Attack turns");
 }
 {
   const s = stateOn("duel", [unit(1, 0, "rifleman", 3, 5, { facing: 2 }), unit(3, 1, "rifleman", 7, 5, { facing: 6, hp: 5 })]);
-  s.seats[1]!.tickets = RULES.ticketsPerDeath;
+  s.baseOwners = s.baseOwners.map((o) => (o === 1 ? 0 : o));
   let r = resolve(s, [], []);
   r = applyAction(r.state, { type: "attack", seat: 0, unitId: 1, targetId: 3 }, roll(0));
-  check("losing your last tickets knocks you out", r.state.seats[1]!.eliminated);
+  check("losing your last unit with no base tiles left knocks you out at once", r.state.seats[1]!.eliminated);
   check("and the last seat standing wins", r.state.phase === "over" && r.state.winner === 0, `${r.state.phase} ${r.state.winner}`);
 }
 {
@@ -420,7 +422,7 @@ section("Attack turns");
 }
 
 // ---------------------------------------------------------------------------
-section("Upkeep: captures, income, healing, bleed");
+section("Upkeep: captures, income, healing");
 
 {
   board("sites", (b) => {
@@ -431,7 +433,7 @@ section("Upkeep: captures, income, healing, bleed");
   s = resolve(s, [], []).state;
   check("standing on a neutral post takes it", s.postOwners[0] === 0);
   check("only engineers take income sites", s.incomeOwners[0] === null);
-  check("holding more posts makes the other seat bleed", s.seats[1]!.tickets === RULES.startTickets - RULES.bleedPerPost, `${s.seats[1]!.tickets}`);
+  check("holding more posts costs the other side nothing by itself (no tickets)", !s.seats[1]!.eliminated && !("tickets" in s.seats[1]!));
 
   s.units = [unit(5, 1, "engineer", 5, 5), unit(6, 1, "engineer", 8, 8)];
   s = resolve(s, [], []).state;
@@ -450,10 +452,99 @@ section("Upkeep: captures, income, healing, bleed");
   board("timeout");
   const s = stateOn("timeout", [unit(1, 0, "rifleman", 0, 0)]);
   s.round = RULES.roundLimit;
-  s.seats[0]!.tickets = 30;
-  s.seats[1]!.tickets = 20;
+  // Seat 0 is well ahead: it holds one of seat 1's base tiles too. Still a draw.
+  s.baseOwners[s.baseOwners.indexOf(1)] = 0;
   const r = resolve(s, [], []).state;
-  check("at the round limit the most tickets wins", r.phase === "over" && r.winner === 0, `${r.phase} ${r.winner}`);
+  check("at the round limit it's a draw, however far ahead anyone is", r.phase === "over" && r.winner === null, `${r.phase} ${r.winner}`);
+}
+
+// ---------------------------------------------------------------------------
+section("Bases: captured tile by tile, like command posts");
+
+{
+  // Seat 0's base: (0,0) (1,0) (0,1) (1,1). Seat 1's: (11,11) (10,11).
+  const map = board("bases");
+  const tiles = baseTiles(map, 2);
+  const idx = (x: number, y: number) => tiles.findIndex((t) => t.x === x && t.y === y);
+  const a = idx(11, 11);
+  let s = stateOn("bases", [unit(1, 0, "rifleman", 11, 11), unit(2, 1, "rifleman", 5, 5)]);
+  check("every base tile starts owned by its home seat", s.baseOwners.every((o, i) => o === tiles[i]!.home), s.baseOwners.join(","));
+  let r = resolve(s, [], []);
+  s = r.state;
+  check("an enemy alone on a base tile turns it neutral", s.baseOwners[a] === null, String(s.baseOwners[a]));
+  const ev = r.events.find((e) => e.type === "capture" && e.site === "base");
+  check("with a capture event naming the base tile", ev?.type === "capture" && ev.index === a && ev.from === 1 && ev.to === null);
+  r = resolve(s, [], []);
+  s = r.state;
+  check("the next round it becomes theirs", s.baseOwners[a] === 0);
+
+  // Captured base tiles are spawn tiles for the captor, and lost ones are not for the loser.
+  s.units = s.units.filter((u) => u.id !== 1);
+  const spawnAt = (seat: number, x: number, y: number) =>
+    codeOf(() => applyAction(s, { type: "orders", seat, orders: { moves: [], spawns: [{ kind: "scout", x, y, facing: 6 }] } }, roll(0.5)));
+  check("the captor can deploy on a captured base tile", spawnAt(0, 11, 11) === "no error", spawnAt(0, 11, 11));
+  check("the side that lost it can't", spawnAt(1, 11, 11) === "bad_spawn_tile", spawnAt(1, 11, 11));
+  check("but can still deploy on the base tiles it kept", spawnAt(1, 10, 11) === "no error", spawnAt(1, 10, 11));
+
+  // Taking it back works the same way.
+  s.units = [unit(5, 1, "rifleman", 11, 11), unit(6, 0, "rifleman", 5, 5)];
+  s = resolve(s, [], []).state;
+  s = resolve(s, [], []).state;
+  check("the owner can retake it: neutral, then theirs again", s.baseOwners[a] === 1, String(s.baseOwners[a]));
+}
+{
+  board("bases-blocked");
+  const tiles = baseTiles(getMap("bases-blocked"), 2);
+  const a = tiles.findIndex((t) => t.x === 11 && t.y === 11);
+  // A defender standing on its own base tile: nothing happens to it.
+  let s = stateOn("bases-blocked", [unit(1, 1, "rifleman", 11, 11), unit(2, 0, "rifleman", 2, 6, { facing: 6 })]);
+  s = resolve(s, [], []).state;
+  check("a defender standing on its own base tile keeps it", s.baseOwners[a] === 1);
+  // An enemy on a tile already neutral (or theirs) after the other seat's unit leaves...
+  s.baseOwners[a] = null;
+  s.units = [unit(1, 1, "rifleman", 11, 11)];
+  s = resolve(s, [], []).state;
+  check("a side standing on its own neutral base tile takes it back", s.baseOwners[a] === 1);
+}
+{
+  // Out only when you own no base tiles AND have no units.
+  board("knockout", (b) => b.pen().post(6, 6));
+  const s = stateOn("knockout", []);
+  let r = resolve(s, [], []).state;
+  check("no units but base tiles left: still in", !r.seats[1]!.eliminated && r.phase === "planning");
+  const t = stateOn("knockout", [unit(1, 1, "scout", 7, 7), unit(2, 0, "rifleman", 0, 0)]);
+  t.baseOwners = t.baseOwners.map((o) => (o === 1 ? null : o));
+  r = resolve(t, [], []).state;
+  check("no base tiles but a unit left: still in", !r.seats[1]!.eliminated && r.phase === "planning");
+  const u = stateOn("knockout", [unit(2, 0, "rifleman", 0, 0)]);
+  u.baseOwners = u.baseOwners.map((o) => (o === 1 ? null : o));
+  u.postOwners = u.postOwners.map(() => 1);
+  r = resolve(u, [], []).state;
+  check("no base tiles and no units: out, even holding command posts", r.seats[1]!.eliminated);
+  check("and the last side standing wins", r.phase === "over" && r.winner === 0, `${r.phase} ${r.winner}`);
+}
+{
+  // Four seats: one by one until one is left.
+  const b = new MapBuilder({ id: "four-test", name: "four-test", blurb: "", width: 12, height: 12, seats: 4 });
+  b.bases[0] = [{ x: 0, y: 0 }];
+  b.bases[1] = [{ x: 11, y: 0 }];
+  b.bases[2] = [{ x: 11, y: 11 }];
+  b.bases[3] = [{ x: 0, y: 11 }];
+  b.pen().post(6, 6);
+  registerMap(b.build());
+  const everyone = (g: GameState) => {
+    for (const seat of g.seats) if (!seat.eliminated && g.phase === "planning") g = applyAction(g, { type: "orders", seat: seat.seat, orders: { moves: [], spawns: [] } }, roll(0.5)).state;
+    return g;
+  };
+  let g = newGame("four-test", 4);
+  g.units = [unit(1, 0, "rifleman", 0, 0), unit(2, 0, "rifleman", 11, 0)];
+  g.baseOwners = [0, null, null, 3];
+  g = everyone(g);
+  check("4 seats: two sides with nothing left go out in the same round", g.seats[1]!.eliminated && g.seats[2]!.eliminated && !g.seats[3]!.eliminated);
+  check("and the game goes on while two remain", g.phase === "planning");
+  g.baseOwners = [0, 0, null, null];
+  g = everyone(g);
+  check("4 seats: the last one standing wins", g.phase === "over" && g.winner === 0, `${g.phase} ${g.winner}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -498,6 +589,62 @@ section("Replay");
   const a = streamFor("s", 1)();
   const b = streamFor("s", 2)();
   check("each action gets its own stream", a !== b && a >= 0 && a < 1);
+}
+
+// ---------------------------------------------------------------------------
+section("Tuning files: checked, and snapshotted per game");
+
+{
+  check("the files in tuning/ pass the check", FILE_TUNING.units.rifleman.cost > 0 && RULES.startGold === FILE_TUNING.rules.startGold);
+  const errorOf = (mutate: (t: { rules: Record<string, unknown>; units: Record<string, Record<string, unknown>> }) => void) => {
+    const raw = structuredClone(FILE_TUNING) as unknown as { rules: Record<string, unknown>; units: Record<string, Record<string, unknown>> };
+    mutate(raw);
+    try {
+      checkTuning(raw);
+      return "no error";
+    } catch (e) {
+      return e instanceof TuningError ? e.message : `unexpected: ${String(e)}`;
+    }
+  };
+  const missing = errorOf((t) => delete t.units.scout!.cost);
+  check("a missing field names the file and field", missing.includes("tuning/units/scout.json") && missing.includes('"cost"'), missing);
+  const typed = errorOf((t) => (t.units.heavy!.hp = "lots"));
+  check("a wrong type is refused", typed.includes("heavy.json") && typed.includes("must be a number"), typed);
+  const negative = errorOf((t) => (t.units.sniper!.cost = -5));
+  check("a negative cost is refused", negative.includes("sniper.json") && negative.includes('"cost"'), negative);
+  const trait = errorOf((t) => (t.units.riot!.traits = ["sheild"]));
+  check("an unknown trait is refused, listing the real ones", trait.includes("riot.json") && trait.includes('"sheild"') && trait.includes("shield"), trait);
+  const typo = errorOf((t) => (t.rules.statGold = 5));
+  check("a misspelt field is caught", typo.includes("rules.json") && typo.includes('"statGold"'), typo);
+  const flank = errorOf((t) => ((t.rules.flank as Record<string, unknown>).rear = null));
+  check("nested rule numbers are checked too", flank.includes('"flank.rear"'), flank);
+}
+{
+  // A game played under one tuning replays identically under its snapshot,
+  // even after the files change; replaying it under the new numbers would not.
+  board("snapshot");
+  const original: Tuning = structuredClone(FILE_TUNING);
+  const changed: Tuning = structuredClone(FILE_TUNING);
+  changed.units.rifleman.damage = 99;
+  const play = () => {
+    let g = stateOn("snapshot", [unit(1, 0, "rifleman", 3, 5, { facing: 2 }), unit(2, 1, "heavy", 7, 5, { facing: 6 })]);
+    const log: Action[] = [
+      { type: "orders", seat: 0, orders: { moves: [], spawns: [] } },
+      { type: "orders", seat: 1, orders: { moves: [], spawns: [] } },
+      { type: "attack", seat: 0, unitId: 1, targetId: 2 },
+    ];
+    // A fixed roll that hits without a crit, so the damage number shows.
+    log.forEach((a) => (g = applyAction(g, a, roll(0.2)).state));
+    return JSON.stringify(g);
+  };
+  // As games.ts does: the snapshot is stored as JSON when the game is made...
+  const stored = JSON.stringify(original);
+  const before = withTuning(original, play);
+  // ...and the files change afterwards (`changed` active); the replay uses the snapshot.
+  const replayed = withTuning(changed, () => withTuning(checkTuning(JSON.parse(stored)), play));
+  check("a game replays identically under its own snapshot after the files change", before === replayed);
+  check("under the changed numbers the same log would not", withTuning(changed, play) !== before);
+  check("withTuning puts the previous tuning back", UNITS.rifleman.damage === FILE_TUNING.units.rifleman.damage);
 }
 
 console.log(`\n${failures === 0 ? "All rules hold." : `${failures} problem(s).`}\n`);

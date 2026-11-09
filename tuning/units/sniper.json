@@ -1,0 +1,14 @@
+{
+  "name": "Sniper",
+  "role": "Deadly at long range if it holds still.",
+  "cost": 150,
+  "hp": 70,
+  "move": 4,
+  "sight": 10,
+  "range": 14,
+  "optimal": 12,
+  "accuracy": 85,
+  "damage": 60,
+  "arc": 60,
+  "traits": ["steady"]
+}

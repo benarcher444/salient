@@ -5,6 +5,7 @@ import { facingAngle } from "../game/grid.js";
 import { pathTo } from "../game/movement.js";
 import { UNIT_GLYPH } from "../game/glyphs.js";
 import { UNITS } from "../game/units.js";
+import { baseTiles } from "../game/visibility.js";
 import type { Point, Unit } from "../game/types.js";
 import { Animator } from "./animate.js";
 import { renderMapArt } from "./art.js";
@@ -113,6 +114,7 @@ export class Board {
     g.imageSmoothingEnabled = true;
     g.imageSmoothingQuality = "high";
     g.drawImage(this.art!, 0, 0, this.s.map.width, this.s.map.height);
+    this.drawBaseOwners();
     this.drawSites(now);
     this.drawFog();
     this.drawPlanning(now);
@@ -151,6 +153,48 @@ export class Board {
     g.restore();
   }
 
+  /**
+   * Base tiles no longer held by their home side. The cached art paints every
+   * base in its home colour; a captured tile is washed in its captor's colour
+   * with a flag in the corner, a neutral one is greyed out with a dashed edge.
+   */
+  private drawBaseOwners() {
+    const v = this.s.view;
+    if (!v) return;
+    const g = this.ctx;
+    baseTiles(this.s.map, v.seats.length).forEach((t, i) => {
+      const owner = v.baseOwners[i] ?? null;
+      if (owner === t.home) return;
+      g.save();
+      if (owner === null) {
+        g.fillStyle = alpha(colourHex(this.pal.paper), 0.6);
+        g.fillRect(t.x, t.y, 1, 1);
+        g.strokeStyle = alpha(colourHex(this.pal.ink), 0.55);
+        g.lineWidth = 0.05;
+        g.setLineDash([0.12, 0.1]);
+        g.strokeRect(t.x + 0.08, t.y + 0.08, 0.84, 0.84);
+      } else {
+        const c = this.pal.seats[owner]!;
+        g.fillStyle = alpha(colourHex(this.pal.paper), 0.35);
+        g.fillRect(t.x, t.y, 1, 1);
+        g.fillStyle = alpha(c, 0.42);
+        g.fillRect(t.x, t.y, 1, 1);
+        g.strokeStyle = alpha(c, 0.95);
+        g.lineWidth = 0.07;
+        g.strokeRect(t.x + 0.06, t.y + 0.06, 0.88, 0.88);
+        // A small flag: this tile is someone else's spawn point now.
+        g.fillStyle = c;
+        g.beginPath();
+        g.moveTo(t.x + 0.14, t.y + 0.14);
+        g.lineTo(t.x + 0.42, t.y + 0.14);
+        g.lineTo(t.x + 0.14, t.y + 0.42);
+        g.closePath();
+        g.fill();
+      }
+      g.restore();
+    });
+  }
+
   private drawSites(now: number) {
     const g = this.ctx;
     const v = this.s.view;
@@ -167,6 +211,13 @@ export class Board {
       const pl = pulse("income", i);
       if (pl) this.ring(p.x + 0.5, p.y + 0.5, pl.seat === null ? this.pal.income : this.pal.seats[pl.seat]!, (now - pl.start) / 900);
     });
+    if (v) {
+      const bases = baseTiles(map, v.seats.length);
+      for (const pl of this.anim.pulses) {
+        const t = pl.site === "base" ? bases[pl.index] : undefined;
+        if (t) this.ring(t.x + 0.5, t.y + 0.5, pl.seat === null ? this.pal.ink : this.pal.seats[pl.seat]!, (now - pl.start) / 900);
+      }
+    }
   }
 
   private ring(cx: number, cy: number, colour: string, t: number) {

@@ -2,8 +2,8 @@
 // orders being drafted and what is selected. Derived questions (where can this
 // unit go, what can it shoot) are answered with the same rule functions the
 // server uses, run on the slice of the game this player can see.
-import { RULES } from "../game/constants.js";
 import { facingToward } from "../game/grid.js";
+import type { Tuning } from "../game/tuning.js";
 import { reachable, type Reach } from "../game/movement.js";
 import { targetsFor, validateOrders } from "../game/rules.js";
 import { UNITS } from "../game/units.js";
@@ -15,6 +15,8 @@ export interface Boot {
   gameId: string;
   mapId: string;
   map: MapDef;
+  /** The game's own unit stats and rule numbers. */
+  tuning: Tuning;
   seat: Seat | null;
   players: { seat: Seat; name: string }[];
 }
@@ -95,7 +97,7 @@ export const goldLeft = (s: ClientState) =>
 export function mySpawnTiles(s: ClientState): Point[] {
   const seat = mySeat(s);
   if (seat === null || !s.view) return [];
-  return spawnTiles(s.map, { postOwners: s.view.postOwners }, seat);
+  return spawnTiles(s.map, { postOwners: s.view.postOwners, baseOwners: s.view.baseOwners, seatCount: s.view.seats.length }, seat);
 }
 
 /** A spawn's default facing: towards the middle of the map, where the fight is. */
@@ -129,4 +131,5 @@ export function targetsOf(s: ClientState, unit: Unit): Unit[] {
   return targetsFor(s.map, partialState(s), unit, myVisible(s));
 }
 
-export const ticketsWarning = (tickets: number) => tickets <= RULES.startTickets / 4;
+/** Down to its last base tile: one more loss and only its units keep it in the game. */
+export const baseWarning = (baseTiles: number) => baseTiles <= 1;

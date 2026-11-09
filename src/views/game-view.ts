@@ -11,6 +11,9 @@ export function battlePage(user: User, live: LiveGame, seat: number | null): Htm
     mapId: map.id,
     // The game's own map snapshot: custom maps are not in the browser bundle.
     map,
+    // And its own tuning (unit stats, rule numbers): the browser previews
+    // shots with the numbers the server will roll with.
+    tuning: live.tuning,
     seat,
     players: live.players.map((p) => ({ seat: p.seat, name: p.name })),
   };
@@ -18,7 +21,7 @@ export function battlePage(user: User, live: LiveGame, seat: number | null): Htm
   <header class="battle-bar">
     <a class="btn btn-ghost btn-icon" href="/" aria-label="Back to your games">${icons.back}</a>
     <div class="battle-title"><strong>${esc(map.name)}</strong><span id="phase-label">Connecting…</span></div>
-    <div class="scoreboard" id="scoreboard" aria-label="Tickets"></div>
+    <div class="scoreboard" id="scoreboard" aria-label="Sides"></div>
     <div class="gold-pill" id="gold" hidden></div>
   </header>
   <div class="battle-main">
