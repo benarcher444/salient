@@ -1,13 +1,43 @@
+# Dependencies and tool caches (npm keeps its cache in the app user's home,
+# which on the server is the app folder)
 node_modules/
-.env
-.env.*
-data/
-invites.txt
-screenshots/
-*.log
-__pycache__/
-.spyproject/
-.idea/
 .npm/
 .cache/
-.claude/
+
+# Secrets and server-local files
+.env
+.env.*
+!.env.example
+invites.txt
+
+# The database, its backups and uploads
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Test and screenshot output
+screenshots/
+test-results/
+playwright-report/
+coverage/
+*.log
+
+# Claude Code: agent worktrees and personal settings (shared settings stay tracked)
+.claude/worktrees/
+.claude/settings.local.json
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# The 2021 Python prototype's leftovers
+__pycache__/
+*.pyc
+.spyproject/
