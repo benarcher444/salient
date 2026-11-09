@@ -39,8 +39,10 @@ None of its code did.
 | `npx tsx scripts/simulate.ts` | Bots against bots, many games in memory: smoke test and balance report |
 | `npm run test:flow` | Two real browsers play a game, then one plays the computer (server running, seeded) |
 | `npm run test:editor` | The map editor in a real browser: symmetry, tools, undo, autosave, playing a map, deleting it (server running, seeded) |
+| `npm run test:keys` | A game against the computer played with the keyboard alone (server running, seeded) |
 | `npm run audit:mobile` | Phone-width audit: tap targets, 16px inputs, overflow (server running, seeded) |
 | `npm run shot` | Screenshot every page, 1440 and 390 wide, light and dark (`--only=`, `--light`, `--desktop`, `--viewport`) |
+| `npx tsx scripts/shot-units.ts` | Every unit class on the board, both sides, close up, light and dark (no server) |
 | `npm run test:all` | All of the above that need no flags, in order |
 | `npm run seed` / `npm run unseed` | Add / remove the demo accounts (`scripts/demo.ts`) and their games |
 | `npm run set-password -- <email> <pw>` | Replace a password (they cannot be recovered) |
@@ -61,7 +63,8 @@ src/game/        The rules. Pure TypeScript, no Node or DOM imports: the server
                  directions), los (line of sight), movement, combat, visibility
                  (fog, spawn tiles), rules (the round structure, applyAction),
                  view (what one seat may know), maps, units, constants, rng,
-                 bot (the computer opponent), seats, glyphs.
+                 bot (the computer opponent), seats, glyphs (class symbols and
+                 silhouettes), keys (the keyboard controls list).
 src/client/      The browser. game.ts (the battle: controller, socket, taps),
                  board.ts (battle drawing), editor.ts (the map editor),
                  art.ts (the cached map art), sites.ts (posts and income
@@ -168,6 +171,27 @@ follows light and dark like everything else. Those tokens must be **hex**: the
 art does colour arithmetic on them. The map art is drawn once per map and
 theme into an offscreen canvas (`ART_PX` per tile) and scaled each frame.
 
+**Every class has its own silhouette, turned to its facing.** Units were
+discs with a small nose, and players could tell neither the classes apart nor
+which way anything faced. Now `UNIT_SHAPE` (`src/game/glyphs.ts`) gives each
+class a shape (rifleman circle, scout diamond, engineer gear, heavy hexagon,
+sniper triangle, riot shield, commando dart, breacher chamfered square) and
+`UNIT_SIZE` a size; the board rotates the shape to the facing and draws a
+white arrow in front, with the symbol kept upright. The panel and the rules
+page draw the same shapes as SVG (`unitBadgeSvg`), so a class looks the same
+everywhere. The unit under the cursor shows its firing arc, enemies' too.
+Health is a bar under the token, not a ring, because rings don't fit shapes.
+
+**The whole battle can be played from the keyboard.** A cursor square is
+always on the board (`s.hover`; the mouse moves it too and leaving the board
+no longer clears it) and every key acts on it or on the selection, through
+the same functions taps and buttons use, so nothing behaves differently by
+input. The keys are listed once in `src/game/keys.ts`, rendered by the
+battle's `?` overlay and the How to play page; the handling is `onKey` in
+`src/client/game.ts`, so change both together. Enter, Space and Tab are left
+alone on a focused button or link. Key hints are hidden on touch screens and
+narrow windows.
+
 **Theme on the account**, stamped into `<html>` at render: no flash. The
 battle page re-reads the palette when the device scheme changes.
 
@@ -230,13 +254,17 @@ the server after `seed`/`unseed`, or it serves games that no longer exist.
 ## Adding things
 
 - **A unit class:** an entry in `UNITS` (`src/game/units.ts`), its kind in
-  `UnitKind` (`types.ts`), a glyph in `glyphs.ts`, and if it has a new trait,
+  `UnitKind` (`types.ts`), a glyph, a shape and a size in `glyphs.ts` (a
+  shape no other class uses), and if it has a new trait,
   the rule where the trait applies (`combat.ts` or `rules.ts`) plus
   `TRAIT_TEXT`. The shop, rules page, bot and panel pick it up from there.
 - **A built-in map:** a builder block in `src/game/maps.ts`, added to `MAPS`.
   Two-seat maps are rotated a half turn, four-seat maps must be square. Run
   `npm test`: it checks symmetry and runs `checkMap`. (Or make it in the
   editor and copy the saved JSON into a builder.)
+- **A key:** a case in `onKey` (`src/client/game.ts`) built on the same
+  functions as the matching tap or button, a line in `KEY_HELP`
+  (`src/game/keys.ts`), and a step in `scripts/test-keys.ts`.
 - **An editor tool:** a button in `editorPage` (`src/views/maps-view.ts`), its
   name in `Tool` and the right set in `src/client/editor.ts`, and its effect in
   `applyAt` built from the primitives so symmetry and undo come for free.
@@ -248,7 +276,7 @@ the server after `seed`/`unseed`, or it serves games that no longer exist.
 
 1. `npm run typecheck`, `npm test`, and the simulator if rules or the bot moved.
 2. Restart the server; `npm run unseed && npm run seed`; restart again.
-3. `npm run test:flow`, `npm run test:editor`, `npm run audit:mobile`,
+3. `npm run test:flow`, `npm run test:editor`, `npm run test:keys`, `npm run audit:mobile`,
    `npm run shot` — and look at the images. All at zero warnings.
 4. Update this file in the same change.
 

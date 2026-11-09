@@ -18,3 +18,102 @@ export const UNIT_GLYPH: Record<UnitKind, string> = {
 export function glyphSvg(kind: UnitKind, cls = "glyph"): string {
   return `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${UNIT_GLYPH[kind]}"/></svg>`;
 }
+
+/**
+ * Each class has its own silhouette, so units can be told apart at a glance
+ * before reading the symbol. Points are on a circle of radius 1 with the unit
+ * facing up (north, -y); the board turns the shape to the unit's facing, so
+ * the asymmetric ones point the way the unit looks. `null` is a circle.
+ */
+export const UNIT_SHAPE: Record<UnitKind, readonly (readonly [number, number])[] | null> = {
+  rifleman: null,
+  scout: [
+    [0, -1.3],
+    [0.7, -0.1],
+    [0, 0.9],
+    [-0.7, -0.1],
+  ],
+  engineer: gear(8, 1.02, 0.8),
+  heavy: polygon(6, 1.04, 0),
+  sniper: [
+    [0, -1.22],
+    [0.98, 0.78],
+    [-0.98, 0.78],
+  ],
+  riot: [
+    [-1, -0.72],
+    [1, -0.72],
+    [0.96, 0.2],
+    [0.52, 0.8],
+    [0, 1.02],
+    [-0.52, 0.8],
+    [-0.96, 0.2],
+  ],
+  commando: [
+    [0, -1.22],
+    [0.94, 0.88],
+    [0, 0.42],
+    [-0.94, 0.88],
+  ],
+  breacher: [
+    [-0.62, -0.88],
+    [0.62, -0.88],
+    [0.88, -0.62],
+    [0.88, 0.62],
+    [0.62, 0.88],
+    [-0.62, 0.88],
+    [-0.88, 0.62],
+    [-0.88, -0.62],
+  ],
+};
+
+/** Token size relative to a rifleman: big units look big. */
+export const UNIT_SIZE: Record<UnitKind, number> = {
+  rifleman: 1,
+  scout: 0.86,
+  engineer: 0.95,
+  heavy: 1.18,
+  sniper: 0.95,
+  riot: 1.1,
+  commando: 0.9,
+  breacher: 1.02,
+};
+
+/** How far the shape reaches forward, as a multiple of its radius (where the facing arrow starts). */
+export const shapeFront = (kind: UnitKind) => {
+  const pts = UNIT_SHAPE[kind];
+  return pts ? Math.max(...pts.map(([, y]) => -y)) : 1;
+};
+
+function polygon(n: number, r: number, offset: number): [number, number][] {
+  return Array.from({ length: n }, (_, i) => {
+    const a = offset + (i / n) * Math.PI * 2 - Math.PI / 2;
+    return [Math.cos(a) * r, Math.sin(a) * r];
+  });
+}
+
+function gear(teeth: number, outer: number, inner: number): [number, number][] {
+  const pts: [number, number][] = [];
+  for (let i = 0; i < teeth * 4; i++) {
+    const a = (i / (teeth * 4)) * Math.PI * 2 - Math.PI / 2;
+    const r = i % 4 < 2 ? outer : inner;
+    pts.push([Math.cos(a) * r, Math.sin(a) * r]);
+  }
+  return pts;
+}
+
+/** The silhouette as SVG path data, facing up, radius 1. */
+export function shapePathData(kind: UnitKind): string {
+  const pts = UNIT_SHAPE[kind];
+  if (!pts) return "M1 0A1 1 0 1 1 -1 0A1 1 0 1 1 1 0Z";
+  return `M${pts.map(([x, y]) => `${x.toFixed(3)} ${y.toFixed(3)}`).join("L")}Z`;
+}
+
+/**
+ * A unit's badge for pages and the side panel: its silhouette in the seat
+ * colour (CSS `--badge`) with the class symbol on top, matching the board.
+ */
+export function unitBadgeSvg(kind: UnitKind): string {
+  const k = 1 / 1.25;
+  return `<svg class="badge-svg" viewBox="-1.32 -1.32 2.64 2.64" aria-hidden="true"><path class="badge-body" d="${shapePathData(kind)}" transform="scale(${(UNIT_SIZE[kind] * 1.0).toFixed(2)})"/><g transform="translate(${(-0.6 * k).toFixed(3)} ${(-0.6 * k).toFixed(3)}) scale(${((1.2 * k) / 24).toFixed(4)})"><path d="${UNIT_GLYPH[kind]}" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></g></svg>`;
+}

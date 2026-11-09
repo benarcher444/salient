@@ -1,7 +1,7 @@
 // Shared fragments: map thumbnails, player chips, unit cards.
 import { MAPS } from "../game/maps.js";
 import { UNITS, UNIT_KINDS, TRAIT_TEXT } from "../game/units.js";
-import { glyphSvg } from "../game/glyphs.js";
+import { unitBadgeSvg } from "../game/glyphs.js";
 import { seatName, seatVar } from "../game/seats.js";
 import type { MapDef, Terrain } from "../game/types.js";
 import type { PlayerInfo } from "../games.js";
@@ -80,7 +80,7 @@ export function unitCards(): Html {
     const u = UNITS[k];
     const stat = (label: string, value: string | number) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
     return `<article class="unit-card">
-  <header><span class="unit-badge">${glyphSvg(k)}</span><div><h3>${esc(u.name)}</h3><p class="faint">${esc(u.role)}</p></div><span class="cost">${u.cost}<small>g</small></span></header>
+  <header><span class="unit-badge">${unitBadgeSvg(k)}</span><div><h3>${esc(u.name)}</h3><p class="faint">${esc(u.role)}</p></div><span class="cost">${u.cost}<small>g</small></span></header>
   <dl class="stats">${stat("Health", u.hp)}${stat("Move", u.move)}${stat("Sight", u.sight)}${stat("Range", u.range)}${stat("Aim", `${u.accuracy}%`)}${stat("Damage", u.damage)}${stat("Arc", `${u.arc}°`)}</dl>
   ${u.traits.length ? `<ul class="traits">${u.traits.map((t) => `<li>${esc(TRAIT_TEXT[t])}</li>`).join("")}</ul>` : ""}
 </article>`;

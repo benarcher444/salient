@@ -1,6 +1,7 @@
 // The battle page: a canvas and a side panel, both driven by public/build/game.js.
 import type { User } from "../db/schema.js";
 import type { LiveGame } from "../games.js";
+import { keyHelpHtml } from "../game/keys.js";
 import { icons } from "./icons.js";
 import { esc, jsonScript, layout, type Html } from "./layout.js";
 
@@ -26,7 +27,12 @@ export function battlePage(user: User, live: LiveGame, seat: number | null): Htm
       <canvas id="board" aria-label="Battle map"></canvas>
       <div class="board-tooltip" id="tooltip" hidden></div>
       <div class="board-banner" id="banner" hidden></div>
+      <div class="key-help" id="key-help" role="dialog" aria-label="Keyboard controls" hidden>
+        <div class="key-help-head"><h2>Keyboard</h2><button class="btn btn-ghost btn-sm" id="key-help-close" type="button">Close</button></div>
+        ${keyHelpHtml()}
+      </div>
       <div class="zoom-controls">
+        <button class="btn btn-icon keys-only" id="key-help-open" type="button" aria-label="Keyboard controls" title="Keyboard controls (?)">?</button>
         <button class="btn btn-icon" id="zoom-in" type="button" aria-label="Zoom in">+</button>
         <button class="btn btn-icon" id="zoom-out" type="button" aria-label="Zoom out">−</button>
         <button class="btn btn-icon" id="zoom-fit" type="button" aria-label="Fit map to screen">${icons.target}</button>

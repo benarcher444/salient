@@ -1,4 +1,5 @@
 // Markup for the ordinary pages: sign-in, the lobby, settings, the rules.
+import { keyHelpHtml } from "../game/keys.js";
 import { APP_NAME } from "../config.js";
 import type { User } from "../db/schema.js";
 import { MAPS } from "../game/maps.js";
@@ -186,6 +187,11 @@ export function rulesPage(user: User | null): Html {
       <li><strong>Income sites</strong> pay +25 gold a round, on top of everyone's +${RULES.baseIncome}. Only <strong>engineers</strong> can capture them.</li>
       <li><strong>Fog of war:</strong> you only see what your units, base and posts can see.</li>
     </ul>
+    <h2>Reading the board</h2>
+    <p>Each class has its own shape, and the white arrow in front of a unit shows which way it faces. Point at any unit, yours or an enemy's, to see its firing arc.</p>
+    <h2>Keyboard</h2>
+    <p>The whole game can be played from the keyboard. A cursor square is always on the map; keys act on it. Press <kbd>?</kbd> during a game for this list.</p>
+    ${keyHelpHtml()}
   </div></section>
   <h2 class="section-title">Units</h2>
   ${unitCards()}

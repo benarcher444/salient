@@ -25,6 +25,27 @@ battlefields in the map editor and play them straight away.
   movement but you can shoot through them; crates, low walls and woods give
   cover; rock blocks everything.
 
+Each class has its own shape on the board, and the white arrow in front of a
+unit shows which way it faces.
+
+## Controls
+
+Tap or click: a unit to select it, a highlighted tile to send it there, a base
+tile to deploy. Or play entirely from the keyboard:
+
+| Keys | |
+|---|---|
+| Arrows or WASD | Move the cursor (Shift: 3 tiles) |
+| Enter / Space | Act on the cursor's tile, as a click |
+| 1–8 | Deploy that unit on the base tile under the cursor |
+| Q / E | Turn the selected unit |
+| Tab | Next unit (in the attack phase, next one that can fire) |
+| 1–9, T, F, H | Attack phase: aim at a target, cycle targets, fire, hold |
+| Delete | Clear an order or cancel a deployment |
+| Shift+Enter | Lock in orders / finish firing |
+| + − 0 | Zoom in, out, fit |
+| Esc, ? | Deselect; show all keys |
+
 The full rules are on the game's **How to play** page.
 
 ## Running it
@@ -50,6 +71,7 @@ npm test                         # the rules, exhaustively
 npx tsx scripts/simulate.ts      # bots play each other: every game must finish
 npm run test:flow                # two browsers play a real game (server running)
 npm run test:editor              # the map editor in a real browser
+npm run test:keys                # a game played with the keyboard alone
 npm run audit:mobile             # phone-size checks (server running)
 npm run shot                     # screenshots of every page, light and dark
 ```

@@ -3,7 +3,7 @@
 // data-action that game.ts handles in one delegated listener.
 import { BLOCK_TEXT, previewShot, type ShotPreview } from "../game/combat.js";
 import { FACING_NAME } from "../game/grid.js";
-import { UNIT_GLYPH } from "../game/glyphs.js";
+import { unitBadgeSvg } from "../game/glyphs.js";
 import { seatName } from "../game/seats.js";
 import { TRAIT_TEXT, UNITS, UNIT_KINDS } from "../game/units.js";
 import type { Facing, Unit, UnitKind } from "../game/types.js";
@@ -24,8 +24,10 @@ import {
 const esc = (v: unknown) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-const glyph = (kind: UnitKind) =>
-  `<svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${UNIT_GLYPH[kind]}"/></svg>`;
+const glyph = (kind: UnitKind) => unitBadgeSvg(kind);
+
+/** A key hint, shown only where there is a keyboard (CSS hides it on touch screens). */
+const kbd = (key: string | number) => `<kbd class="key-hint">${key}</kbd>`;
 
 const seatStyle = (seat: number) => `style="--seat:var(--seat-${seat})"`;
 
@@ -79,6 +81,9 @@ export function renderPanel(s: ClientState): string {
       const u = unitById(s, sel.id);
       if (u && (!isMine(s, u) || v.phase === "over")) parts.push(unitDetail(s, u));
     }
+  }
+  if (seat !== null && v.phase !== "over") {
+    parts.push(`<div class="panel-section keys-only key-line"><p class="faint small">${kbd("←↑→↓")} cursor · ${kbd("Enter")} act · ${kbd("Shift")}+${kbd("Enter")} ${v.phase === "planning" ? "lock in" : "done firing"} · ${kbd("?")} all keys</p></div>`);
   }
   parts.push(logBlock(s));
   if (seat !== null && v.phase !== "over" && !v.seats[seat]?.eliminated) {
@@ -146,11 +151,11 @@ function planningBlock(s: ClientState): string {
     }
   } else if (sel?.type === "spawnTile") {
     const left = goldLeft(s);
-    parts.push(`<div class="panel-section"><h3 class="panel-h">Deploy a unit</h3><div class="shop">${UNIT_KINDS.map((k) => {
+    parts.push(`<div class="panel-section"><h3 class="panel-h">Deploy a unit</h3><div class="shop">${UNIT_KINDS.map((k, i) => {
       const u = UNITS[k];
       const can = u.cost <= left;
       return `<button class="shop-item" type="button" data-action="buy" data-kind="${k}"${can ? "" : " disabled"} title="${esc(u.role)}">
-  <span class="unit-badge" ${seatStyle(v.seat!)}>${glyph(k)}</span><span class="shop-name">${esc(u.name)}</span><span class="shop-cost">${u.cost}g</span>
+  <span class="unit-badge" ${seatStyle(v.seat!)}>${glyph(k)}</span><span class="shop-name">${esc(u.name)}</span><span class="shop-cost">${u.cost}g</span>${kbd(i + 1)}
 </button>`;
     }).join("")}</div><p class="faint small">${left} gold left this round.</p></div>`);
   } else if (sel?.type === "spawn") {
@@ -202,9 +207,9 @@ function attackBlock(s: ClientState): string {
       parts.push(`<div class="btn-row"><button class="btn btn-danger btn-lg grow" data-action="fire" type="button"${s.pending ? " disabled" : ""}>Fire · ${Math.round(p.chance * 100)}%</button><button class="btn" data-action="untarget" type="button">Back</button></div>`);
     } else if (targets.length) {
       parts.push(`<h3 class="panel-h">Targets</h3><ul class="target-list">${targets
-        .map((t) => {
+        .map((t, i) => {
           const p = previewShot(s.map, shooter, t);
-          return `<li><button class="target-item" type="button" data-action="target" data-target="${t.id}" ${seatStyle(t.seat)}><span class="unit-badge sm">${glyph(t.kind)}</span><span>${unitLabel(s, t)}<small class="faint">${t.hp} hp · ${p.flank}${p.inCover ? " · in cover" : ""}</small></span><strong>${Math.round(p.chance * 100)}%</strong></button></li>`;
+          return `<li><button class="target-item" type="button" data-action="target" data-target="${t.id}" ${seatStyle(t.seat)}><span class="unit-badge sm">${glyph(t.kind)}</span><span>${unitLabel(s, t)}<small class="faint">${t.hp} hp · ${p.flank}${p.inCover ? " · in cover" : ""}</small></span><strong>${Math.round(p.chance * 100)}%</strong>${kbd(i + 1)}</button></li>`;
         })
         .join("")}</ul>`);
     } else parts.push(`<p class="faint small">Nothing this unit can hit from here.</p>`);

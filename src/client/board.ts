@@ -3,7 +3,7 @@
 import { previewShot } from "../game/combat.js";
 import { facingAngle } from "../game/grid.js";
 import { pathTo } from "../game/movement.js";
-import { UNIT_GLYPH } from "../game/glyphs.js";
+import { UNIT_GLYPH, UNIT_SHAPE, UNIT_SIZE, shapeFront } from "../game/glyphs.js";
 import { UNITS } from "../game/units.js";
 import type { Point, Unit } from "../game/types.js";
 import { Animator } from "./animate.js";
@@ -84,6 +84,21 @@ export class Board {
     this.camera.fit(this.w, this.h);
   }
 
+  /** Pan just enough to keep a tile, and a tile around it, on screen. True if the view moved. */
+  reveal(p: Point): boolean {
+    const cam = this.camera;
+    const visW = this.w / cam.scale;
+    const visH = this.h / cam.scale;
+    const x0 = cam.x;
+    const y0 = cam.y;
+    // Only once the tile itself is (partly) off screen, then with a tile to spare.
+    if (p.x < cam.x) cam.x = p.x - 1;
+    else if (p.x + 1 > cam.x + visW) cam.x = p.x + 2 - visW;
+    if (p.y < cam.y) cam.y = p.y - 1;
+    else if (p.y + 1 > cam.y + visH) cam.y = p.y + 2 - visH;
+    return cam.x !== x0 || cam.y !== y0;
+  }
+
   get viewSize() {
     return { w: this.w, h: this.h };
   }
@@ -117,9 +132,10 @@ export class Board {
     this.drawFog();
     this.drawPlanning(now);
     this.drawAttack(now);
+    this.drawCursorArc(now);
     this.drawUnits(now);
     this.drawEffects(now);
-    this.drawHover();
+    this.drawHover(now);
 
     g.restore();
     this.anim.prune(now);
@@ -425,7 +441,7 @@ export class Board {
     if (opacity <= 0) return;
     const g = this.ctx;
     const colour = this.pal.seats[u.seat]!;
-    const r = 0.38 * (o.scale ?? 1);
+    const r = 0.34 * UNIT_SIZE[u.kind] * (o.scale ?? 1);
     g.save();
     g.globalAlpha = opacity;
 
@@ -441,78 +457,92 @@ export class Board {
       g.strokeStyle = alpha(colourHex(this.pal.warn), 1 - t);
       g.lineWidth = 0.06;
       g.beginPath();
-      g.arc(cx, cy, r + 0.08 + t * 0.25, 0, Math.PI * 2);
+      g.arc(cx, cy, r * 1.15 + 0.06 + t * 0.22, 0, Math.PI * 2);
       g.stroke();
     }
     if (o.selected) {
       g.strokeStyle = this.pal.paper;
       g.lineWidth = 0.1;
       g.beginPath();
-      g.arc(cx, cy, r + 0.14, 0, Math.PI * 2);
+      g.arc(cx, cy, r * 1.15 + 0.12, 0, Math.PI * 2);
       g.stroke();
       g.strokeStyle = this.pal.ink;
       g.lineWidth = 0.04;
       g.stroke();
     }
 
-    // The nose: a small wedge on the rim pointing where the unit faces.
-    const heading = angle - Math.PI / 2;
-    g.fillStyle = colour;
+    // Everything below is drawn turned to the facing, with the shape's "up" as
+    // forward: the class silhouette, then a bold arrow out in front of it.
+    const outline = shade(colour, -0.55);
+    g.save();
+    g.translate(cx, cy);
+    g.rotate(angle);
+    const front = shapeFront(u.kind) * r;
     g.beginPath();
-    g.moveTo(cx + Math.cos(heading) * (r + 0.17), cy + Math.sin(heading) * (r + 0.17));
-    g.lineTo(cx + Math.cos(heading + 0.55) * (r - 0.02), cy + Math.sin(heading + 0.55) * (r - 0.02));
-    g.lineTo(cx + Math.cos(heading - 0.55) * (r - 0.02), cy + Math.sin(heading - 0.55) * (r - 0.02));
+    g.moveTo(0, -(front + 0.27));
+    g.lineTo(0.21, -(front - 0.02));
+    g.lineTo(0, -(front + 0.05));
+    g.lineTo(-0.21, -(front - 0.02));
     g.closePath();
+    g.lineJoin = "round";
+    g.strokeStyle = outline;
+    g.lineWidth = 0.1;
+    g.stroke();
+    g.fillStyle = "#ffffff";
     g.fill();
+    g.strokeStyle = colour;
+    g.lineWidth = 0.035;
+    g.stroke();
 
-    const grad = g.createRadialGradient(cx - r * 0.35, cy - r * 0.4, r * 0.1, cx, cy, r);
-    grad.addColorStop(0, shade(colour, 0.25));
-    grad.addColorStop(1, shade(colour, -0.2));
+    shapePath(g, u.kind, r);
+    const grad = g.createRadialGradient(-r * 0.3, -r * 0.35, r * 0.1, 0, 0, r * 1.1);
+    grad.addColorStop(0, shade(colour, 0.22));
+    grad.addColorStop(1, shade(colour, -0.22));
     g.fillStyle = grad;
-    g.beginPath();
-    g.arc(cx, cy, r, 0, Math.PI * 2);
     g.fill();
-    g.fillStyle = shade(colour, -0.45);
-    g.beginPath();
-    g.arc(cx, cy, r * 0.74, 0, Math.PI * 2);
-    g.fill();
+    g.strokeStyle = outline;
+    g.lineWidth = 0.05;
+    g.stroke();
     if (o.ghost) {
       g.setLineDash([0.08, 0.06]);
       g.strokeStyle = this.pal.paper;
       g.lineWidth = 0.035;
-      g.beginPath();
-      g.arc(cx, cy, r, 0, Math.PI * 2);
       g.stroke();
       g.setLineDash([]);
     }
+    g.restore();
 
+    // The class symbol stays upright so it can always be read.
+    const gs = r * 1.25;
     g.save();
-    g.translate(cx - r * 0.55, cy - r * 0.55);
-    g.scale((r * 1.1) / 24, (r * 1.1) / 24);
-    g.strokeStyle = "#ffffff";
-    g.lineWidth = 2.2;
+    g.translate(cx - gs / 2, cy - gs / 2);
+    g.scale(gs / 24, gs / 24);
     g.lineCap = "round";
     g.lineJoin = "round";
+    g.strokeStyle = alpha("#000000", 0.35);
+    g.lineWidth = 4.4;
+    g.stroke(glyphPath(u.kind));
+    g.strokeStyle = "#ffffff";
+    g.lineWidth = 2.6;
     g.stroke(glyphPath(u.kind));
     g.restore();
 
     if (!o.ghost && o.hp !== undefined) {
+      // A health bar along the bottom of the tile.
       const max = UNITS[u.kind].hp;
       const f = Math.max(0, Math.min(1, o.hp / max));
-      g.strokeStyle = alpha("#000000", 0.35);
-      g.lineWidth = 0.07;
-      g.beginPath();
-      g.arc(cx, cy, r + 0.06, 0, Math.PI * 2);
-      g.stroke();
-      g.strokeStyle = f > 0.6 ? this.pal.ok : f > 0.3 ? this.pal.warn : this.pal.danger;
-      g.beginPath();
-      g.arc(cx, cy, r + 0.06, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2);
-      g.stroke();
+      const bw = 0.62;
+      const bx = cx - bw / 2;
+      const by = cy + 0.36;
+      g.fillStyle = alpha("#000000", 0.55);
+      g.fillRect(bx - 0.025, by - 0.025, bw + 0.05, 0.12);
+      g.fillStyle = f > 0.6 ? this.pal.ok : f > 0.3 ? this.pal.warn : this.pal.danger;
+      g.fillRect(bx, by, bw * f, 0.07);
     }
     if (o.badge) {
       // A small "+" disc: drawn as strokes, not text, so it stays crisp.
-      const bx = cx + r * 0.8;
-      const by = cy - r * 0.8;
+      const bx = cx + r * 0.85;
+      const by = cy - r * 0.85;
       g.fillStyle = this.pal.ink;
       g.beginPath();
       g.arc(bx, by, 0.15, 0, Math.PI * 2);
@@ -575,14 +605,67 @@ export class Board {
     }
   }
 
-  private drawHover() {
+  /** The firing arc of whatever unit is under the cursor, either side's. */
+  private drawCursorArc(now: number) {
+    const h = this.s.hover;
+    const v = this.s.view;
+    if (!h || !v) return;
+    const u = v.units.find((x) => x.x === h.x && x.y === h.y);
+    if (!u) return;
+    const p = this.anim.pose(u, now);
+    if (p.alpha < 0.5) return;
+    this.arc(p.x, p.y, u.kind, u.facing, this.pal.seats[u.seat]!, 0.13);
+  }
+
+  /**
+   * The cursor: the tile the keyboard acts on, and the tile under the mouse.
+   * Corner brackets in ink over a paper halo, so it reads on every terrain.
+   */
+  private drawHover(now: number) {
     const h = this.s.hover;
     if (!h) return;
     const g = this.ctx;
-    g.strokeStyle = alpha(colourHex(this.pal.paper), 0.8);
-    g.lineWidth = 0.04;
-    g.strokeRect(h.x + 0.03, h.y + 0.03, 0.94, 0.94);
+    const pulse = 0.02 * Math.sin(now / 260);
+    const a = 0.04 - pulse;
+    const b = 0.96 + pulse;
+    const len = 0.28;
+    const corners: [number, number, number, number][] = [
+      [a, a, 1, 1],
+      [b, a, -1, 1],
+      [a, b, 1, -1],
+      [b, b, -1, -1],
+    ];
+    g.save();
+    g.lineCap = "round";
+    g.lineJoin = "round";
+    for (const [width, colour] of [
+      [0.13, alpha(colourHex(this.pal.paper), 0.9)],
+      [0.06, this.pal.ink],
+    ] as const) {
+      g.strokeStyle = colour;
+      g.lineWidth = width;
+      g.beginPath();
+      for (const [x, y, dx, dy] of corners) {
+        g.moveTo(h.x + x + dx * len, h.y + y);
+        g.lineTo(h.x + x, h.y + y);
+        g.lineTo(h.x + x, h.y + y + dy * len);
+      }
+      g.stroke();
+    }
+    g.restore();
   }
+}
+
+/** A class silhouette around the origin, facing up, at radius r (the caller rotates). */
+function shapePath(g: CanvasRenderingContext2D, kind: Unit["kind"], r: number) {
+  const pts = UNIT_SHAPE[kind];
+  g.beginPath();
+  if (!pts) {
+    g.arc(0, 0, r, 0, Math.PI * 2);
+    return;
+  }
+  pts.forEach(([x, y], i) => (i ? g.lineTo(x * r, y * r) : g.moveTo(x * r, y * r)));
+  g.closePath();
 }
 
 /** Colours from the palette are hex; this tolerates the odd rgb() too by falling back to white. */

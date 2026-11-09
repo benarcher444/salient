@@ -1,9 +1,9 @@
 // The battle page: connects to the game, turns taps into orders, and keeps the
 // board, panel and top bar in step with the server.
-import { facingToward, samePoint } from "../game/grid.js";
+import { FACING_NAME, facingToward, samePoint } from "../game/grid.js";
 import { getMap, registerMap } from "../game/maps.js";
 import { pathTo } from "../game/movement.js";
-import { UNITS } from "../game/units.js";
+import { UNITS, UNIT_KINDS } from "../game/units.js";
 import type { Facing, GameEvent, Point, Unit, UnitKind } from "../game/types.js";
 import type { PlayerView } from "../game/view.js";
 import { Board } from "./board.js";
@@ -11,7 +11,9 @@ import { attachGestures } from "./camera.js";
 import { playerName, renderPanel, renderTopBar, resignConfirm, unitLabel } from "./panel.js";
 import {
   defaultFacing,
+  draftProblem,
   emptyOrders,
+  goldLeft,
   isMine,
   isMyAttackTurn,
   moveOrderFor,
@@ -54,6 +56,7 @@ const canvas = document.getElementById("board") as HTMLCanvasElement;
 const panel = document.getElementById("panel")!;
 const tooltip = document.getElementById("tooltip")!;
 const banner = document.getElementById("banner")!;
+const keyHelp = document.getElementById("key-help")!;
 const board = new Board(canvas, s);
 
 // --- Rendering -------------------------------------------------------------------
@@ -170,6 +173,7 @@ function onMessage(m: ServerMessage) {
   if (s.selected?.type === "unit" && !unitById(s, s.selected.id)) s.selected = null;
   if (s.selected?.type === "target" && (!unitById(s, s.selected.targetId) || !unitById(s, s.selected.shooterId))) s.selected = null;
 
+  placeCursor();
   for (const e of m.events) logEvent(e, v.round);
   announce(before, v);
   refresh();
@@ -403,19 +407,40 @@ panel.addEventListener("click", (e) => {
 // --- Pointer, keys, resizing ---------------------------------------------------------
 
 function onHover(sx: number, sy: number | null) {
+  // The cursor stays where it was when the mouse leaves the board: the
+  // keyboard always has a tile to act on.
   const tile = sy === null ? null : board.tileAt(sx, sy);
-  s.hover = tile;
   if (!tile || sy === null) {
     tooltip.hidden = true;
     return;
   }
+  s.hover = tile;
+  showTooltip(tile, sx, sy);
+}
+
+function showTooltip(tile: Point, sx: number, sy: number) {
   const u = unitAt(s, tile);
   if (u) {
-    tooltip.innerHTML = `<strong>${unitLabel(s, u)}</strong><span>${u.hp} / ${UNITS[u.kind].hp} hp</span>`;
+    tooltip.innerHTML = `<strong>${unitLabel(s, u)}</strong><span>${u.hp} / ${UNITS[u.kind].hp} hp · facing ${FACING_NAME[u.facing]}</span>`;
     tooltip.style.left = `${sx + 14}px`;
     tooltip.style.top = `${sy + 14}px`;
     tooltip.hidden = false;
   } else tooltip.hidden = true;
+}
+
+/** Where the cursor starts: on your first unit, else your base, else the middle. */
+function placeCursor() {
+  if (s.hover || !s.view) return;
+  const mine = s.view.units.find((u) => isMine(s, u));
+  s.hover = mine ? { x: mine.x, y: mine.y } : (mySpawnTiles(s)[0] ?? { x: Math.floor(s.map.width / 2), y: Math.floor(s.map.height / 2) });
+}
+
+/** Put the cursor on a tile from the keyboard: keep it in view and label it. */
+function cursorTo(p: Point) {
+  s.hover = { x: Math.max(0, Math.min(s.map.width - 1, p.x)), y: Math.max(0, Math.min(s.map.height - 1, p.y)) };
+  if (board.reveal(s.hover)) board.userMoved = true;
+  const c = board.camera.toScreen(s.hover.x + 0.5, s.hover.y + 0.5);
+  showTooltip(s.hover, c.x + board.camera.scale * 0.3, c.y + board.camera.scale * 0.1);
 }
 
 attachGestures(canvas, board.camera, {
@@ -435,21 +460,221 @@ attachGestures(canvas, board.camera, {
   },
 });
 
-window.addEventListener("keydown", (e) => {
-  if ((e.target as HTMLElement).closest("input, textarea, select")) return;
-  if (e.key === "Escape") {
-    s.selected = null;
-    resignAsked = false;
-    refresh();
-  }
-  if ((e.key === "q" || e.key === "e") && s.selected?.type === "unit" && canPlan(s)) {
-    const u = unitById(s, s.selected.id);
-    if (!u || !isMine(s, u)) return;
+// --- The keyboard ---------------------------------------------------------------------
+// Everything a tap or a panel button does has a key, so a game can be played
+// without the mouse. The cursor (s.hover) is the tile keys act on.
+
+const MOVES: Record<string, [number, number]> = {
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  w: [0, -1],
+  s: [0, 1],
+  a: [-1, 0],
+  d: [1, 0],
+};
+
+/** The shooter the attack keys work on: the selected unit, or the target's shooter. */
+function currentShooter(): Unit | undefined {
+  const sel = s.selected;
+  const id = sel?.type === "unit" ? sel.id : sel?.type === "target" ? sel.shooterId : null;
+  const u = id !== null ? unitById(s, id) : undefined;
+  return u && isMine(s, u) ? u : undefined;
+}
+
+function rotateSelected(step: 1 | 7) {
+  const sel = s.selected;
+  if (!canPlan(s)) return false;
+  if (sel?.type === "unit") {
+    const u = unitById(s, sel.id);
+    if (!u || !isMine(s, u)) return false;
     const order = moveOrderFor(s, u.id);
-    const current = order?.facing ?? u.facing;
-    const next = ((current + (e.key === "e" ? 1 : 7)) % 8) as Facing;
+    const next = (((order?.facing ?? u.facing) + step) % 8) as Facing;
     if (order) order.facing = next;
     else s.draft.moves.push({ unitId: u.id, path: [], facing: next });
+    return true;
+  }
+  if (sel?.type === "spawn") {
+    const sp = s.draft.spawns[sel.index];
+    if (!sp) return false;
+    sp.facing = ((sp.facing + step) % 8) as Facing;
+    return true;
+  }
+  return false;
+}
+
+/** Deploy unit class n (1-based, shop order) on the selected base tile or the cursor's. */
+function deployByNumber(n: number) {
+  const kind = UNIT_KINDS[n - 1];
+  if (!kind || !canPlan(s)) return false;
+  const sel = s.selected;
+  const tile = sel?.type === "spawnTile" ? { x: sel.x, y: sel.y } : s.hover;
+  if (!tile) return false;
+  if (!mySpawnTiles(s).some((t) => samePoint(t, tile)) || unitAt(s, tile) || s.draft.spawns.some((sp) => samePoint(sp, tile))) {
+    toast("Put the cursor on a free tile of your base to deploy.");
+    return true;
+  }
+  if (UNITS[kind].cost > goldLeft(s)) {
+    toast(`Not enough gold for a ${UNITS[kind].name.toLowerCase()}.`);
+    return true;
+  }
+  s.draft.spawns.push({ kind, x: tile.x, y: tile.y, facing: defaultFacing(s.map, tile) });
+  s.selected = { type: "spawn", index: s.draft.spawns.length - 1 };
+  return true;
+}
+
+/** Tab: step through your units (in the attack phase, the ones that can still fire). */
+function cycleUnits(back: boolean) {
+  const v = s.view;
+  if (!v) return false;
+  const pool =
+    v.phase === "attack" && isMyAttackTurn(s)
+      ? v.readyShooters.map((id) => unitById(s, id)).filter((u): u is Unit => !!u)
+      : v.units.filter((u) => isMine(s, u));
+  if (!pool.length) return false;
+  const cur = currentShooter();
+  const i = cur ? pool.findIndex((u) => u.id === cur.id) : -1;
+  const next = i < 0 ? pool[back ? pool.length - 1 : 0]! : pool[(i + (back ? pool.length - 1 : 1)) % pool.length]!;
+  s.selected = { type: "unit", id: next.id };
+  cursorTo(next);
+  return true;
+}
+
+/** Pick target n (1-based, the panel's order) or cycle with 0. */
+function pickTarget(n: number | "next") {
+  if (!isMyAttackTurn(s)) return false;
+  const shooter = currentShooter();
+  if (!shooter || s.view!.acted.includes(shooter.id)) return false;
+  const targets = targetsOf(s, shooter);
+  if (!targets.length) return false;
+  let t: Unit | undefined;
+  if (n === "next") {
+    const sel = s.selected;
+    const i = sel?.type === "target" ? targets.findIndex((x) => x.id === sel.targetId) : -1;
+    t = targets[(i + 1) % targets.length];
+  } else t = targets[n - 1];
+  if (!t) return false;
+  s.selected = { type: "target", shooterId: shooter.id, targetId: t.id };
+  cursorTo(t);
+  return true;
+}
+
+function finish() {
+  const v = s.view;
+  if (!v || s.pending) return false;
+  if (canPlan(s)) {
+    const problem = draftProblem(s);
+    if (problem) {
+      toast(problem);
+      return true;
+    }
+    s.selected = null;
+    send({ type: "orders", orders: s.draft });
+    return true;
+  }
+  if (isMyAttackTurn(s)) {
+    send({ type: "endAttacks" });
+    s.selected = null;
+    return true;
+  }
+  return false;
+}
+
+function onKey(e: KeyboardEvent): boolean {
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (key === "?" || (key === "/" && e.shiftKey)) {
+    keyHelp.hidden = !keyHelp.hidden;
+    return true;
+  }
+  if (key === "Escape") {
+    if (!keyHelp.hidden) keyHelp.hidden = true;
+    else s.selected = null;
+    resignAsked = false;
+    return true;
+  }
+  const move = MOVES[key];
+  if (move && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const step = e.shiftKey ? 3 : 1;
+    const from = s.hover ?? { x: 0, y: 0 };
+    cursorTo({ x: from.x + move[0] * step, y: from.y + move[1] * step });
+    return true;
+  }
+  if ((key === "Enter" || key === " ") && !e.shiftKey) {
+    if (s.hover) onTap(s.hover);
+    return true;
+  }
+  if (key === "Enter" && e.shiftKey) return finish();
+  if (/^[1-9]$/.test(key)) {
+    const n = Number(key);
+    return s.view?.phase === "attack" ? pickTarget(n) : deployByNumber(n);
+  }
+  switch (key) {
+    case "q":
+      return rotateSelected(7);
+    case "e":
+      return rotateSelected(1);
+    case "Tab":
+      return cycleUnits(e.shiftKey);
+    case "t":
+      return pickTarget("next");
+    case "f":
+      if (s.selected?.type === "target") {
+        fire();
+        return true;
+      }
+      return false;
+    case "h": {
+      const u = currentShooter();
+      if (!u || !isMyAttackTurn(s) || s.view!.acted.includes(u.id)) return false;
+      send({ type: "hold", unitId: u.id });
+      s.selected = null;
+      return true;
+    }
+    case "Backspace":
+    case "Delete": {
+      const sel = s.selected;
+      if (!canPlan(s)) return false;
+      if (sel?.type === "spawn") {
+        s.draft.spawns.splice(sel.index, 1);
+        s.selected = null;
+        return true;
+      }
+      if (sel?.type === "unit") {
+        s.draft.moves = s.draft.moves.filter((m) => m.unitId !== sel.id);
+        return true;
+      }
+      return false;
+    }
+    case "+":
+    case "=":
+      zoomBy(1.25);
+      return true;
+    case "-":
+    case "_":
+      zoomBy(0.8);
+      return true;
+    case "0":
+      board.fit();
+      return true;
+  }
+  return false;
+}
+
+function zoomBy(f: number) {
+  board.userMoved = true;
+  const c = s.hover ? board.camera.toScreen(s.hover.x + 0.5, s.hover.y + 0.5) : { x: board.viewSize.w / 2, y: board.viewSize.h / 2 };
+  board.camera.zoomAt(f, c.x, c.y);
+}
+
+window.addEventListener("keydown", (e) => {
+  const target = e.target as HTMLElement;
+  if (target.closest("input, textarea, select")) return;
+  // A focused button or link keeps Enter and Space; the board gets the rest.
+  if ((e.key === "Enter" || e.key === " " || e.key === "Tab") && target.closest("button, a, summary")) return;
+  if (e.ctrlKey || e.metaKey) return;
+  if (onKey(e)) {
+    e.preventDefault();
     refresh();
   }
 });
@@ -465,6 +690,8 @@ document.getElementById("zoom-out")!.addEventListener("click", () => {
   board.camera.zoomAt(0.8, w / 2, h / 2);
 });
 document.getElementById("zoom-fit")!.addEventListener("click", () => board.fit());
+document.getElementById("key-help-open")!.addEventListener("click", () => (keyHelp.hidden = !keyHelp.hidden));
+document.getElementById("key-help-close")!.addEventListener("click", () => (keyHelp.hidden = true));
 
 new ResizeObserver(() => board.resize()).observe(canvas.parentElement!);
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => board.repaint());
