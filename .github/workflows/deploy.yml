@@ -37,10 +37,28 @@ jobs:
           HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          # Secrets pasted on Windows can carry \r line endings, which make
+          # ssh reject the key; strip them. Problems are reported as
+          # ::error:: annotations, which show on the run's public summary.
+          printf '%s\n' "$SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           # Pinned host key: refuse anything pretending to be the server.
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf '%s\n' "$KNOWN_HOSTS" | tr -d '\r' > ~/.ssh/known_hosts
+          HOST=$(printf '%s' "$HOST" | tr -d '\r[:space:]')
+          [ -n "$HOST" ] || { echo "::error::DEPLOY_HOST is empty"; exit 1; }
+          if ! ssh-keygen -y -f ~/.ssh/deploy_key > /dev/null 2>&1; then
+            echo "::error::DEPLOY_SSH_KEY is not a readable private key: paste the whole file, BEGIN to END lines"
+            exit 1
+          fi
+          echo "::notice::Deploying with key $(ssh-keygen -lf ~/.ssh/deploy_key | awk '{print $2}')"
+          grep -q "^$HOST ssh-" ~/.ssh/known_hosts \
+            || echo "::error::DEPLOY_KNOWN_HOSTS should be one line starting '$HOST ssh-ed25519'"
           # The server ties this key to one command, so none is sent.
-          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes "root@$HOST"
+          set +e
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes "root@$HOST" 2> >(tee /tmp/ssh.err >&2)
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            echo "::error::Deploy failed (exit $code): $(tail -n 5 /tmp/ssh.err | tr '\n' ' ' | cut -c1-600)"
+          fi
+          exit "$code"
