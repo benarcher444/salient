@@ -85,5 +85,5 @@ for (const map of maps) {
     console.log(`  PROBLEM:   ${stuck} game(s) stuck, ${refused} refused bot action(s)`);
   }
 }
-console.log(`\n${problems === 0 ? "Every game ran to a finish." : `${problems} map(s) with problems.`}\n`);
+console.log(`\n${problems === 0 ? "No game got stuck and the bots broke no rule." : `${problems} map(s) with problems.`}\n`);
 if (problems > 0) process.exit(1);

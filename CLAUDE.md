@@ -124,10 +124,11 @@ not move in the next planning phase, only turn (`fired_cannot_move`).
 
 **Enemies block shots; your own side doesn't.** `traceLine` returns the tiles
 a line passes through, and `previewShot` refuses a shot (`enemy_in_way`)
-when any unit not of the shooter's side stands on one. It needs the units
-list for that, so every caller passes the units it knows: the server all of
-them, a browser or bot its own view (an unseen blocker means the server
-refuses a shot the browser offered). The rule looks only at the current
+when an enemy stands on one. Only enemies the shooter's side can see count
+(`knownTo` in `rules.ts`): the browser and the bots know exactly those, so
+they never offer a shot the server refuses, and a refusal never betrays an
+unseen unit. (The first version used every unit on the server; the
+simulator caught bots losing their whole attack phase to such refusals.) The rule looks only at the current
 tick, so the result never depends on unit order. Attack turns go round the
 table one unit at a time; the first shooter rotates each round; a seat with
 nothing in reach is skipped automatically. A unit with more than one shot
