@@ -7,7 +7,7 @@ const PUBLIC_GET = [/^\/static\//, /^\/how-to-play$/];
 
 /**
  * May a guest whose game is `gameId` make this request? Only: that game's
- * page, its live connection, its invite link (which sends them to the game),
+ * page, its live connection, its replay log (once it is over), its invite link (which sends them to the game),
  * the public pages and assets, and signing out. Anything else is refused,
  * whatever the route, so a new route is closed to guests until listed here.
  */
@@ -18,6 +18,6 @@ export function guestMayRequest(method: string, url: string, gameId: string): bo
   if (read && PUBLIC_GET.some((re) => re.test(path))) return true;
   if (m === "POST" && path === "/logout") return true;
   const game = `/g/${gameId}`;
-  if (read && (path === game || path === `/ws${game}` || path.startsWith(`${game}/invite/`))) return true;
+  if (read && (path === game || path === `/ws${game}` || path === `${game}/replay` || path.startsWith(`${game}/invite/`))) return true;
   return false;
 }

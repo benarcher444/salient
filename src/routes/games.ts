@@ -6,7 +6,7 @@ import { currentUser, requireUser } from "../context.js";
 import { mapForNewGame, listMaps } from "../saved-maps.js";
 import { ERROR_TEXT, RuleError, type Facing, type Orders } from "../game/types.js";
 import { eventsFor, viewFor, type PlayerView } from "../game/view.js";
-import { act, createGame, deleteGame, gamesFor, inGame, joinGame, leaveGame, loadGame, openGames, subscribe, type ClientAction, type LiveGame } from "../games.js";
+import { act, createGame, deleteGame, gamesFor, inGame, joinGame, leaveGame, loadGame, openGames, replayLog, subscribe, type ClientAction, type LiveGame } from "../games.js";
 import { clientMessage } from "../protocol.js";
 import { inviteTokenFor } from "../guest.js";
 import { battlePage } from "../views/game-view.js";
@@ -55,6 +55,18 @@ export function gameRoutes(app: FastifyInstance) {
     // would see through everyone's fog.
     if (seat === null && live.state.phase !== "over") return reply.code(403).type(html).send(notFoundPage(user));
     return reply.type(html).send(battlePage(user, live, seat));
+  });
+
+  // A finished game's whole log, for the replay. Never one in progress: the
+  // log is everyone's moves, fog or no fog.
+  app.get("/g/:id/replay", (request, reply) => {
+    const user = requireUser(request, reply);
+    if (!user) return reply;
+    const { id } = request.params as { id: string };
+    if (!loadGame(id)) return reply.code(404).send({ error: "not_found" });
+    const log = replayLog(id);
+    if (!log) return reply.code(403).send({ error: "not_over" });
+    return reply.header("cache-control", "private, max-age=3600").send(log);
   });
 
   app.post("/g/:id/join", (request, reply) => {

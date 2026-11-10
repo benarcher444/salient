@@ -413,6 +413,9 @@ body.bare { height: 100dvh; overflow: hidden; }
 .panel-h { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-faint); font-weight: 750; }
 .status h2 { font-size: 1.12rem; }
 .status p { color: var(--text-muted); font-size: 0.88rem; }
+.replay-progress { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.replay-progress span { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
+.replay-controls .btn { min-width: 44px; }
 .status-over h2 { font-size: 1.5rem; text-transform: uppercase; letter-spacing: 0.06em; }
 .panel-action { position: sticky; bottom: 0; background: var(--surface); z-index: 1; box-shadow: 0 -6px 12px -10px rgb(0 0 0 / 0.25); }
 .panel-foot { margin-top: auto; align-items: flex-start; }
@@ -488,7 +491,7 @@ body.bare { height: 100dvh; overflow: hidden; }
   .scoreboard { order: 3; flex-basis: 100%; margin-left: 0; }
   .score { padding: 4px 8px; }
   .battle-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
-  .side { border-left: 0; border-top: 1px solid var(--border); max-height: 44dvh; }
+  .side, .editor-panel { border-left: 0; border-top: 1px solid var(--border); max-height: 44dvh; }
   /* No room in a phone's bottom sheet: pan the board itself. */
   .minimap-wrap { display: none; }
   .zoom-controls { right: 8px; bottom: 8px; }
@@ -515,6 +518,8 @@ body.bare { height: 100dvh; overflow: hidden; }
 
 .editor-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
 .editor-actions form { display: contents; }
+/* The editor's panel stands alone (the battle's sits in .side with the minimap). */
+.editor-panel { border-left: 1px solid var(--border); }
 .editor-panel .panel-section { gap: 8px; }
 .tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
 .tool { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 9px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; font-size: 0.86rem; font-weight: 600; cursor: pointer; text-align: left; min-width: 0; }
