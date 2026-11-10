@@ -348,13 +348,22 @@ export function initiativeOrder(state: GameState): Seat[] {
   return order;
 }
 
+/**
+ * The units a seat knows of: its own and the enemies it can see. Only these
+ * block its shots, so the browser (which knows exactly these) and the server
+ * always agree on what can be shot, and a refused shot never gives away an
+ * unseen unit.
+ */
+export function knownTo(map: MapDef, state: GameState, seat: Seat, tiles?: ReadonlySet<number>): Unit[] {
+  const seen = tiles ?? visibleTiles(map, state, seat);
+  return state.units.filter((u) => unitVisibleTo(map, state, seat, u, seen));
+}
+
 /** Enemies this unit could shoot right now. */
 export function targetsFor(map: MapDef, state: GameState, unit: Unit, tiles?: ReadonlySet<number>): Unit[] {
   if (!isArmed(unit.kind)) return [];
-  const seen = tiles ?? visibleTiles(map, state, unit.seat);
-  return state.units.filter(
-    (t) => t.seat !== unit.seat && unitVisibleTo(map, state, unit.seat, t, seen) && previewShot(map, unit, t, state.units).possible,
-  );
+  const known = knownTo(map, state, unit.seat, tiles);
+  return known.filter((t) => t.seat !== unit.seat && previewShot(map, unit, t, known).possible);
 }
 
 /**
@@ -418,7 +427,7 @@ function attack(
   if (!target) throw new RuleError("no_such_unit");
   if (!targetsFor(map, state, shooter).includes(target)) throw new RuleError("cannot_shoot");
 
-  const preview = previewShot(map, shooter, target, state.units);
+  const preview = previewShot(map, shooter, target, knownTo(map, state, seat));
   const result = rollShot(preview, roll(), roll());
   const fired = state.burst?.unitId === shooter.id ? state.burst.fired + 1 : 1;
   const hurt = (u: Unit, damage: number) => {
