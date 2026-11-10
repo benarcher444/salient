@@ -122,6 +122,8 @@ export function planOrders(view: PlayerView, random: () => number): Orders {
     for (const idx of reach.cost.keys()) {
       const p = { x: idx % map.width, y: Math.floor(idx / map.width) };
       if (claimed.has(k(p))) continue;
+      // Routes may end on a seen enemy's tile, but the bot doesn't gamble on it leaving.
+      if (blocked.has(idx)) continue;
       // Never aim for a teammate's tile, even one that may move off it: if it
       // ends up staying, two units would be ordered onto one tile.
       if (mine.some((o) => o.id !== u.id && o.x === p.x && o.y === p.y)) continue;

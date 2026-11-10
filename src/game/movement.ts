@@ -15,9 +15,10 @@ export interface Reach {
 
 /**
  * Every tile the unit can reach within its budget. `blocked` holds tile
- * indexes it may not enter at all (enemies the player can see). Friendly
- * units can be walked through; whether a tile is a legal place to stop is
- * the caller's question.
+ * indexes it may not walk through (enemies the player can see): a route may
+ * end on one (if the enemy moves off, you take the tile; if not, you stop in
+ * front of it) but never pass it. Friendly units can be walked through;
+ * whether a tile is a legal place to stop is the caller's question.
  */
 export function reachable(map: MapDef, unit: Unit, blocked: ReadonlySet<number>): Reach {
   const budget = moveBudget(unit);
@@ -36,7 +37,6 @@ export function reachable(map: MapDef, unit: Unit, blocked: ReadonlySet<number>)
       const n = { x: p.x + d.x, y: p.y + d.y };
       if (!inBounds(map, n.x, n.y)) continue;
       const ni = n.y * map.width + n.x;
-      if (blocked.has(ni)) continue;
       if (!stepOpen(map, p, n)) continue;
       const nc = c + stepCost(map, p, n);
       if (nc > budget) continue;
@@ -44,7 +44,8 @@ export function reachable(map: MapDef, unit: Unit, blocked: ReadonlySet<number>)
       if (prev !== undefined && prev <= nc) continue;
       cost.set(ni, nc);
       from.set(ni, cur);
-      if (!open.includes(ni)) open.push(ni);
+      // A blocked tile can end a route, never lead on.
+      if (!blocked.has(ni) && !open.includes(ni)) open.push(ni);
     }
   }
   return { cost, from };

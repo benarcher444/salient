@@ -80,8 +80,7 @@ export function reachOf(s: ClientState, unit: Unit): Reach {
   let r = reachCache.get(unit);
   if (!r && unit.fired) {
     // Fired last round: it may turn, not move. Only its own tile.
-    const everywhereElse = new Set(s.map.terrain.map((_, i) => i).filter((i) => i !== unit.y * s.map.width + unit.x));
-    r = reachable(s.map, unit, everywhereElse);
+    r = { cost: new Map([[unit.y * s.map.width + unit.x, 0]]), from: new Map() };
     reachCache.set(unit, r);
   }
   if (!r) {

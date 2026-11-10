@@ -225,7 +225,9 @@ section("Movement");
   const path = pathTo(m, reach, { x: 3, y: 5 });
   check("pathTo rebuilds the route without the start", path?.length === 3 && path[2]!.x === 3, JSON.stringify(path));
   const blocked = reachable(m, r, new Set([5 * m.width + 1]));
-  check("a blocked tile (a seen enemy) is never entered", !blocked.cost.has(5 * m.width + 1));
+  check("a blocked tile (a seen enemy) can end a route", blocked.cost.has(5 * m.width + 1));
+  const past = pathTo(m, blocked, { x: 2, y: 5 });
+  check("but a route never passes through it", !!past && !past.some((p) => p.x === 1 && p.y === 5), JSON.stringify(past));
 }
 {
   const m = board("move-forest", (b) => b.pen().rect(1, 0, 11, 12, "forest"));
@@ -521,6 +523,14 @@ const row = (y: number, ...xs: number[]) => xs.map((x) => ({ x, y }));
   const s = stateOn("lockstep", [unit(1, 0, "rifleman", 2, 6), unit(2, 1, "rifleman", 3, 6)]);
   const r = resolve(s, [{ unitId: 1, path: row(6, 3, 4) }]).state;
   check("but nobody walks through an enemy", pos(at(r, 1)) === "2,6", pos(at(r, 1)));
+}
+{
+  // Aiming for an enemy's tile: you get it if they step off it this round.
+  const s = stateOn("lockstep", [unit(1, 0, "rifleman", 2, 6), unit(2, 1, "rifleman", 3, 6)]);
+  const r = resolve(s, [{ unitId: 1, path: row(6, 3) }], [{ unitId: 2, path: [{ x: 3, y: 5 }] }]).state;
+  check("a move onto an enemy's tile succeeds if the enemy leaves it", pos(at(r, 1)) === "3,6" && pos(at(r, 2)) === "3,5", `${pos(at(r, 1))} ${pos(at(r, 2))}`);
+  const stay = resolve(s, [{ unitId: 1, path: row(6, 3) }]).state;
+  check("and stops in front of it, facing it, if it stays", pos(at(stay, 1)) === "2,6" && at(stay, 1)!.facing === E, `${pos(at(stay, 1))} ${at(stay, 1)!.facing}`);
 }
 
 // ---------------------------------------------------------------------------

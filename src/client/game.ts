@@ -361,7 +361,8 @@ function planningTap(p: Point, u: Unit | undefined, input: Input) {
     if (input === "mouse") startAim();
     return;
   }
-  if (selUnit && isMine(s, selUnit) && (!u || leaving)) {
+  // A route may also end on an enemy's tile: take it if they leave, stop in front of them if not.
+  if (selUnit && isMine(s, selUnit) && (!u || leaving || !isMine(s, u))) {
     const reach = reachOf(s, selUnit);
     const path = pathTo(s.map, reach, p);
     if (path && path.length) {
