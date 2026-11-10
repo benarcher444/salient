@@ -114,8 +114,11 @@ one in progress (they would see through everyone's fog).
 
 **Tiles, free facing, simultaneous moves, attacks in turn.** Chosen with the
 owner over the prototype's free movement. Moves resolve in lockstep, one step
-per tick: two units wanting one tile both stop, swaps are refused, and walking
-into an unseen enemy stops you facing it. The rule looks only at the current
+per tick. A side's own units pass through each other (the owner's call):
+only enemies block, so two sides wanting one tile both stop, a swap with an
+enemy is refused, and walking into an unseen enemy stops you facing it.
+Nobody finishes on a shared tile: afterwards the later arrival steps back
+along its route until every tile holds one unit. The rule looks only at the current
 tick, so the result never depends on unit order. Attack turns go round the
 table one unit at a time; the first shooter rotates each round; a seat with
 nothing in reach is skipped automatically. A unit with more than one shot

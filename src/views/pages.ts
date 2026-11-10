@@ -180,7 +180,7 @@ export function rulesPage(user: User | null): Html {
     <h2>A round</h2>
     <ol class="steps">
       <li><strong>Plan.</strong> Everyone plans at the same time, in secret. Buy units onto any base tile or command post you hold, and give each unit a route and a facing. Lock in when ready.</li>
-      <li><strong>Move.</strong> When the last player locks in, all routes play out together, one step at a time. Two units heading for the same tile both stop; so does anyone who walks into a unit they couldn't see.</li>
+      <li><strong>Move.</strong> When the last player locks in, all routes play out together, one step at a time. Your own units walk through each other freely, but no two can finish on the same tile. Units of different sides heading for the same tile both stop, and so does anyone who walks into an enemy they couldn't see.</li>
       <li><strong>Attack.</strong> Players take turns firing one unit at a time (a commando takes both its shots in its turn). The first shot rotates each round. Units with nothing in reach are skipped automatically.</li>
       <li><strong>Upkeep.</strong> Captures (base tiles, posts, income sites), income and healing. Anyone left with no base tiles and no units is knocked out.</li>
     </ol>

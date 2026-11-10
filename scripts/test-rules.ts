@@ -425,6 +425,44 @@ const row = (y: number, ...xs: number[]) => xs.map((x) => ({ x, y }));
   );
   check("or give orders to someone else's unit", theirs === "not_your_unit", theirs);
 }
+{
+  const s = stateOn("lockstep", [unit(1, 0, "rifleman", 2, 6), unit(2, 0, "rifleman", 3, 6)]);
+  const r = resolve(s, [{ unitId: 1, path: row(6, 3, 4, 5) }]).state;
+  check("your units walk through a teammate standing still", pos(at(r, 1)) === "5,6" && pos(at(r, 2)) === "3,6", `${pos(at(r, 1))} ${pos(at(r, 2))}`);
+}
+{
+  const s = stateOn("lockstep", [unit(1, 0, "rifleman", 2, 6), unit(2, 0, "rifleman", 3, 6)]);
+  const r = resolve(s, [
+    { unitId: 1, path: row(6, 3) },
+    { unitId: 2, path: row(6, 2) },
+  ]).state;
+  check("teammates can swap places", pos(at(r, 1)) === "3,6" && pos(at(r, 2)) === "2,6", `${pos(at(r, 1))} ${pos(at(r, 2))}`);
+}
+{
+  // Unit 1 walks through teammate 2 and is stopped by an enemy right there:
+  // it may not finish on 2's tile, so it steps back to where it came from.
+  const s = stateOn("lockstep", [unit(1, 0, "rifleman", 2, 6), unit(2, 0, "rifleman", 3, 6), unit(3, 1, "rifleman", 4, 6, { facing: W })]);
+  const { state: r, events } = resolve(s, [{ unitId: 1, path: row(6, 3, 4, 5) }]);
+  check("stopped on a teammate's tile, a unit steps back off it", pos(at(r, 1)) === "2,6" && pos(at(r, 2)) === "3,6", `${pos(at(r, 1))} ${pos(at(r, 2))}`);
+  check("and counts as bumped, not moved", events.some((e) => e.type === "move" && e.unitId === 1 && e.bumped) && !at(r, 1)!.moved);
+  const tiles = r.units.map(pos);
+  check("no two units ever finish on one tile", new Set(tiles).size === tiles.length, tiles.join(" "));
+}
+{
+  // Two teammates through each other's paths while an enemy blocks both: still one per tile.
+  const s = stateOn("lockstep", [unit(1, 0, "rifleman", 2, 6), unit(2, 0, "rifleman", 3, 6), unit(3, 1, "rifleman", 5, 6)]);
+  const r = resolve(s, [
+    { unitId: 1, path: row(6, 3, 4) },
+    { unitId: 2, path: row(6, 4, 5, 6) },
+  ]).state;
+  const tiles = r.units.map(pos);
+  check("a queue stopped by an enemy untangles to one unit per tile", new Set(tiles).size === tiles.length, tiles.join(" "));
+}
+{
+  const s = stateOn("lockstep", [unit(1, 0, "rifleman", 2, 6), unit(2, 1, "rifleman", 3, 6)]);
+  const r = resolve(s, [{ unitId: 1, path: row(6, 3, 4) }]).state;
+  check("but nobody walks through an enemy", pos(at(r, 1)) === "2,6", pos(at(r, 1)));
+}
 
 // ---------------------------------------------------------------------------
 section("Deploying");

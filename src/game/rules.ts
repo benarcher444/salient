@@ -206,13 +206,19 @@ function resolveSpawns(state: GameState, events: GameEvent[]) {
 }
 
 /**
- * Everyone moves at once, one step per tick. In each tick a unit's step is
- * refused if another unit wants the same tile, if two units would swap
- * places, or if the tile ahead is held by a unit that is not itself moving
- * on. A refused unit stops where it is for the rest of the round, turned
- * towards where it was going — that is how you find an enemy you could not
- * see. Because the rule only looks at the current tick, the result does not
- * depend on the order units are listed in.
+ * Everyone moves at once, one step per tick. A side's own units pass through
+ * one another freely (onto, past, even swapping places); only enemies get in
+ * the way. In each tick a step is refused if a unit of another side wants the
+ * same tile, if it would swap places with an enemy, or if the tile ahead is
+ * held by an enemy that is not itself moving on. A refused unit stops where it
+ * is for the rest of the round, turned towards where it was going: that is how
+ * you find an enemy you could not see.
+ *
+ * Nobody may finish on a tile with another unit, so when the steps are done,
+ * of any two units sharing a tile the later arrival steps back along its
+ * route, again until every tile holds one (a unit's starting tile is its own,
+ * so this always ends). The rules look only at positions and ticks, never at
+ * the order units are listed in.
  */
 function resolveMoves(map: MapDef, state: GameState, events: GameEvent[]) {
   const orders = new Map<number, MoveOrder>();
@@ -232,37 +238,40 @@ function resolveMoves(map: MapDef, state: GameState, events: GameEvent[]) {
     if (!order) continue;
     movers.push({ unit, path: order.path, from: { x: unit.x, y: unit.y }, taken: [], active: order.path.length > 0, bumped: false });
   }
+  const key = (p: Point) => `${p.x},${p.y}`;
 
   const longest = Math.max(0, ...movers.map((m) => m.path.length));
   for (let t = 0; t < longest; t++) {
     const stepping = movers.filter((m) => m.active && t < m.path.length);
     if (stepping.length === 0) break;
-    const occupant = new Map<string, Unit>();
-    for (const u of state.units) occupant.set(`${u.x},${u.y}`, u);
+    const moverOf = new Map(stepping.map((m) => [m.unit, m]));
+    const standing = new Map<string, Unit[]>();
+    for (const u of state.units) standing.set(key(u), [...(standing.get(key(u)) ?? []), u]);
+    const enemiesAt = (p: Point, seat: Seat) => (standing.get(key(p)) ?? []).filter((u) => u.seat !== seat);
     const want = new Map<Mover, Point>();
     for (const m of stepping) want.set(m, m.path[t]!);
 
     const refused = new Set<Mover>();
-    const wantCount = new Map<string, number>();
-    for (const p of want.values()) wantCount.set(`${p.x},${p.y}`, (wantCount.get(`${p.x},${p.y}`) ?? 0) + 1);
+    const seatsWanting = new Map<string, Set<Seat>>();
+    for (const [m, p] of want) seatsWanting.set(key(p), (seatsWanting.get(key(p)) ?? new Set()).add(m.unit.seat));
     for (const [m, p] of want) {
-      if ((wantCount.get(`${p.x},${p.y}`) ?? 0) > 1) refused.add(m);
-      const other = occupant.get(`${p.x},${p.y}`);
-      const otherMover = other ? stepping.find((s) => s.unit === other) : undefined;
-      if (otherMover && samePoint(want.get(otherMover)!, m.unit)) refused.add(m); // a swap
+      // Two sides reaching for one tile: everyone reaching for it stops.
+      if (seatsWanting.get(key(p))!.size > 1) refused.add(m);
+      // Swapping places with an enemy is refused (friends may swap).
+      for (const other of enemiesAt(p, m.unit.seat)) {
+        const om = moverOf.get(other);
+        if (om && samePoint(want.get(om)!, m.unit)) refused.add(m);
+      }
     }
-    // A step into an occupied tile is fine only if its occupant is stepping
-    // out this same tick. Refusals cascade back down a queue, so repeat until
+    // A step onto an enemy's tile is fine only if that enemy is stepping out
+    // this same tick. Refusals cascade back down a queue, so repeat until
     // nothing changes.
     let changed = true;
     while (changed) {
       changed = false;
       for (const [m, p] of want) {
         if (refused.has(m)) continue;
-        const other = occupant.get(`${p.x},${p.y}`);
-        if (!other) continue;
-        const otherMover = stepping.find((s) => s.unit === other);
-        if (!otherMover || refused.has(otherMover)) {
+        if (enemiesAt(p, m.unit.seat).some((o) => !moverOf.has(o) || refused.has(moverOf.get(o)!))) {
           refused.add(m);
           changed = true;
         }
@@ -281,6 +290,31 @@ function resolveMoves(map: MapDef, state: GameState, events: GameEvent[]) {
         m.unit.moved = true;
         m.taken.push({ ...p });
       }
+    }
+  }
+
+  // Untangle: nobody finishes on a shared tile. A unit's arrival on its
+  // current tile is its step count (-1: it never left its start); the later
+  // arrival steps back, ties going to the higher unit id.
+  const moverByUnit = new Map(movers.map((m) => [m.unit, m]));
+  const arrival = (u: Unit) => (moverByUnit.get(u)?.taken.length ?? 0) - 1;
+  for (let tangled = true; tangled; ) {
+    tangled = false;
+    const byTile = new Map<string, Unit[]>();
+    for (const u of state.units) byTile.set(key(u), [...(byTile.get(key(u)) ?? []), u]);
+    for (const group of byTile.values()) {
+      if (group.length < 2) continue;
+      const back = [...group].sort((a, b) => arrival(b) - arrival(a) || b.id - a.id)[0]!;
+      const m = moverByUnit.get(back);
+      if (!m || m.taken.length === 0) continue; // cannot happen: starting tiles are distinct
+      const left = m.taken.pop()!;
+      const to = m.taken[m.taken.length - 1] ?? m.from;
+      back.x = to.x;
+      back.y = to.y;
+      back.facing = facingToward(back, left);
+      back.moved = m.taken.length > 0;
+      m.bumped = true;
+      tangled = true;
     }
   }
 
