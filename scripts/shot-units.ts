@@ -18,20 +18,20 @@ const units = [];
 let id = 1;
 UNIT_KINDS.forEach((kind, i) => {
   // Seat 0 on one row, seat 1 below it, each class turned a different way.
-  units.push({ id: id++, seat: 0, kind, x: 3 + i * 2, y: 4, facing: i % 8, hp: UNITS[kind].hp, moved: false, damaged: false });
-  units.push({ id: id++, seat: 1, kind, x: 3 + i * 2, y: 6, facing: (i + 4) % 8, hp: Math.round(UNITS[kind].hp * 0.45), moved: false, damaged: false });
+  units.push({ id: id++, seat: 0, kind, x: 3 + i * 2, y: 4, facing: (i * 40) % 360, hp: UNITS[kind].hp, moved: false, damaged: false });
+  units.push({ id: id++, seat: 1, kind, x: 3 + i * 2, y: 6, facing: (i * 40 + 180) % 360, hp: Math.round(UNITS[kind].hp * 0.45), moved: false, damaged: false });
 });
 const view = {
   mapId: map.id, seat: 0, round: 3, phase: "attack", seats: [], gold: 0, units,
   visible: map.terrain.map((_, i) => i), postOwners: map.posts.map(() => null), incomeOwners: map.income.map(() => null),
-  myOrders: null, attackTurn: 1, acted: [], readyShooters: [], winner: null,
+  myOrders: null, attackTurn: 1, acted: [], readyShooters: [], burst: null, baseOwners: [], winner: null,
 };
-const s = { boot: {}, map, view, players: [], connected: true, draft: { moves: [], spawns: [] }, editing: false, selected: { type: "unit", id: 5 }, hover: { x: 7, y: 6 }, log: [], pending: false };
+const s = { boot: {}, map, view, players: [], connected: true, draft: { moves: [], spawns: [] }, editing: false, selected: { type: "unit", id: 5 }, hover: { x: 7, y: 6 }, log: [], pending: false, aiming: null };
 const canvas = document.getElementById("board");
 const board = new Board(canvas, s);
 board.resize();
 board.userMoved = true;
-board.camera.scale = 64;
+board.camera.scale = 50;
 board.camera.x = 2;
 board.camera.y = 3;
 const frame = (t) => { board.draw(t); requestAnimationFrame(frame); };

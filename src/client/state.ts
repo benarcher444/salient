@@ -47,6 +47,11 @@ export interface ClientState {
   log: LogLine[];
   /** Waiting for the server to answer an action, so buttons don't double-fire. */
   pending: boolean;
+  /**
+   * Aiming the selected unit or deployment: it turns to follow the pointer
+   * until a tap sets it. `before` is the facing to go back to on cancel.
+   */
+  aiming: { before: Facing; selection: string } | null;
 }
 
 export const emptyOrders = (): Orders => ({ moves: [], spawns: [] });

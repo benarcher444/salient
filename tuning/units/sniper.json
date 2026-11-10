@@ -1,14 +1,15 @@
 {
   "name": "Sniper",
-  "role": "Deadly at long range if it holds still.",
+  "role": "Deadly at long range once braced. Hopeless up close.",
   "cost": 150,
   "hp": 70,
   "move": 4,
-  "sight": 10,
+  "sight": 9,
   "range": 14,
   "optimal": 12,
-  "accuracy": 85,
+  "accuracy": 90,
   "damage": 60,
   "arc": 60,
-  "traits": ["steady"]
+  "shots": 1,
+  "traits": ["steady", "scoped"]
 }

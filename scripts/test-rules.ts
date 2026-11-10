@@ -8,15 +8,15 @@ import { traceLine } from "../src/game/los.js";
 import { MAPS, MapBuilder, getMap, registerMap, symmetryTransforms } from "../src/game/maps.js";
 import { checkMap } from "../src/game/mapcheck.js";
 import { pathTo, reachable, validatePath } from "../src/game/movement.js";
-import { previewShot, rollShot } from "../src/game/combat.js";
-import { applyAction, newGame } from "../src/game/rules.js";
+import { damageRange, previewShot, rollShot, type ShotPreview } from "../src/game/combat.js";
+import { applyAction, isFacing, newGame, readyShooters, targetsFor, validateOrders } from "../src/game/rules.js";
 import { streamFor } from "../src/game/rng.js";
-import { UNITS } from "../src/game/units.js";
+import { UNITS, UNIT_KINDS } from "../src/game/units.js";
 import { viewFor } from "../src/game/view.js";
-import { RuleError, type Action, type GameState, type MapDef, type Point, type Unit, type UnitKind } from "../src/game/types.js";
+import { RuleError, type Action, type GameEvent, type GameState, type MapDef, type Point, type Unit, type UnitKind } from "../src/game/types.js";
 import { RULES } from "../src/game/constants.js";
-import { baseTiles, spawnTiles } from "../src/game/visibility.js";
-import { FILE_TUNING, TuningError, checkTuning, withTuning, type Tuning } from "../src/game/tuning.js";
+import { baseTiles, spawnTiles, visibleTiles } from "../src/game/visibility.js";
+import { FILE_TUNING, TuningError, checkTuning, upgradeSnapshot, withTuning, type Tuning } from "../src/game/tuning.js";
 
 let failures = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -38,8 +38,19 @@ function board(id: string, draw: (b: MapBuilder) => void = () => {}, w = 12, h =
 }
 
 function unit(id: number, seat: number, kind: UnitKind, x: number, y: number, extra: Partial<Unit> = {}): Unit {
-  return { id, seat, kind, x, y, facing: 2, hp: UNITS[kind].hp, moved: false, damaged: false, ...extra };
+  return { id, seat, kind, x, y, facing: 90, hp: UNITS[kind].hp, moved: false, damaged: false, ...extra };
 }
+
+/** Facings in degrees: 0 north, clockwise. */
+const N = 0;
+const E = 90;
+const S = 180;
+const W = 270;
+
+/** A chance as the rules compute it: the product of the factors, rounded and clamped, as a percentage. */
+const pct = (...factors: number[]) =>
+  Math.min(RULES.maxHitChance, Math.max(RULES.minHitChance, Math.round(factors.reduce((a, b) => a * b, 1))));
+const chanceOf = (p: ShotPreview) => Math.round(p.chance * 100);
 
 function stateOn(mapId: string, units: Unit[]): GameState {
   const s = newGame(mapId, 2);
@@ -224,20 +235,25 @@ section("Shooting");
 
 {
   const m = board("shoot-open");
-  const s = unit(1, 0, "rifleman", 2, 5, { facing: 2 });
-  const facingMe = previewShot(m, s, unit(2, 1, "rifleman", 6, 5, { facing: 6 }));
-  check("open ground at optimal range: base accuracy", facingMe.possible && Math.round(facingMe.chance * 100) === 75, `${facingMe.chance}`);
-  check("a hit from the front does base damage", facingMe.flank === "front" && facingMe.damage === 30, `${facingMe.flank} ${facingMe.damage}`);
-  const back = previewShot(m, s, unit(2, 1, "rifleman", 6, 5, { facing: 2 }));
-  check("from behind: 1.5x", back.flank === "rear" && back.damage === 45, `${back.flank} ${back.damage}`);
-  const side = previewShot(m, s, unit(2, 1, "rifleman", 6, 5, { facing: 0 }));
-  check("from the side: 1.25x", side.flank === "side" && side.damage === 38, `${side.flank} ${side.damage}`);
-  const arc = previewShot(m, unit(1, 0, "rifleman", 2, 5, { facing: 0 }), unit(2, 1, "rifleman", 6, 5));
+  const rifle = UNITS.rifleman;
+  const s = unit(1, 0, "rifleman", 2, 5, { facing: E });
+  const facingMe = previewShot(m, s, unit(2, 1, "rifleman", 6, 5, { facing: W }));
+  check("open ground at optimal range: base accuracy", facingMe.possible && chanceOf(facingMe) === rifle.accuracy, `${facingMe.chance}`);
+  check("a hit from the front does base damage", facingMe.flank === "front" && facingMe.damage === rifle.damage, `${facingMe.flank} ${facingMe.damage}`);
+  const back = previewShot(m, s, unit(2, 1, "rifleman", 6, 5, { facing: E }));
+  check("from behind: flank.rear", back.flank === "rear" && back.damage === Math.round(rifle.damage * RULES.flank.rear), `${back.flank} ${back.damage}`);
+  const side = previewShot(m, s, unit(2, 1, "rifleman", 6, 5, { facing: N }));
+  check("from the side: flank.side", side.flank === "side" && side.damage === Math.round(rifle.damage * RULES.flank.side), `${side.flank} ${side.damage}`);
+  const oblique = previewShot(m, s, unit(2, 1, "rifleman", 6, 5, { facing: 300 }));
+  check("any facing in degrees works: 300 is within 60 of facing the shooter", oblique.flank === "front", oblique.flank);
+  const arc = previewShot(m, unit(1, 0, "rifleman", 2, 5, { facing: N }), unit(2, 1, "rifleman", 6, 5));
   check("a target 90 degrees off a 120 degree arc can't be shot", arc.block === "outside_arc", arc.block);
+  const nudged = previewShot(m, unit(1, 0, "rifleman", 2, 5, { facing: 35 }), unit(2, 1, "rifleman", 6, 5));
+  check("turned to 35 degrees, it is 55 off: inside the arc", nudged.possible, nudged.block);
   const far = previewShot(m, s, unit(2, 1, "rifleman", 11, 5));
   check("beyond range can't be shot", far.block === "out_of_range", far.block);
   const longShot = previewShot(m, s, unit(2, 1, "rifleman", 10, 5));
-  check("at max range accuracy is halved", Math.round(longShot.chance * 100) === 38, `${longShot.chance}`);
+  check("at max range accuracy falls to longRangeAccuracy", chanceOf(longShot) === pct(rifle.accuracy, RULES.longRangeAccuracy), `${longShot.chance}`);
   const friend = previewShot(m, s, unit(2, 0, "rifleman", 4, 5));
   check("no friendly fire", friend.block === "same_side");
 }
@@ -247,17 +263,19 @@ section("Shooting");
     b.pen().tile(3, 8, "crate");
     b.pen().tile(4, 2, "crate");
   });
-  const near = previewShot(m, unit(1, 0, "rifleman", 2, 5), unit(2, 1, "rifleman", 6, 5, { facing: 6 }));
-  check("a crate beside the target is cover: x0.6", near.inCover && Math.round(near.chance * 100) === 45, `${near.chance}`);
-  const mine = previewShot(m, unit(1, 0, "rifleman", 2, 8), unit(2, 1, "rifleman", 6, 8, { facing: 6 }));
-  check("a crate beside the shooter costs nothing", !mine.inCover && Math.round(mine.chance * 100) === 75, `${mine.chance}`);
-  const between = previewShot(m, unit(1, 0, "rifleman", 1, 2), unit(2, 1, "rifleman", 7, 2, { facing: 6 }));
-  // 75 x long range (6 tiles: 1 - 0.5 * 1/3) x 0.85 obstruction = 53.1
-  check("a crate midway partly obstructs: x0.85", !between.inCover && Math.round(between.chance * 100) === 53, `${between.chance}`);
-  const breach = previewShot(m, unit(1, 0, "breacher", 3, 5), unit(2, 1, "rifleman", 6, 5));
-  check("a breacher further than 2.5 tiles still respects cover", breach.inCover);
-  const breachClose = previewShot(m, unit(1, 0, "breacher", 4, 4), unit(2, 1, "rifleman", 6, 5));
-  check("up close the breacher ignores it", breachClose.possible && !breachClose.inCover, JSON.stringify(breachClose.modifiers));
+  const acc = UNITS.rifleman.accuracy;
+  const near = previewShot(m, unit(1, 0, "rifleman", 2, 5), unit(2, 1, "rifleman", 6, 5, { facing: W }));
+  check("a crate beside the target is cover: x coverFactor", near.inCover && chanceOf(near) === pct(acc, RULES.coverFactor), `${near.chance}`);
+  const mine = previewShot(m, unit(1, 0, "rifleman", 2, 8), unit(2, 1, "rifleman", 6, 8, { facing: W }));
+  check("a crate beside the shooter costs nothing", !mine.inCover && chanceOf(mine) === acc, `${mine.chance}`);
+  const between = previewShot(m, unit(1, 0, "rifleman", 1, 2), unit(2, 1, "rifleman", 7, 2, { facing: W }));
+  // 6 tiles: one past optimal (5) of the three to max range (8).
+  const longF = 1 - ((1 - RULES.longRangeAccuracy) * 1) / 3;
+  check("a crate midway partly obstructs: x obstructionFactor", !between.inCover && chanceOf(between) === pct(acc, longF, RULES.obstructionFactor), `${between.chance}`);
+  const gun = previewShot(m, unit(1, 0, "shotgun", 3, 5), unit(2, 1, "rifleman", 6, 5));
+  check("a shotgun further than closeQuartersRange still respects cover", gun.inCover);
+  const gunClose = previewShot(m, unit(1, 0, "shotgun", 4, 4), unit(2, 1, "rifleman", 6, 5));
+  check("up close the shotgun ignores it", gunClose.possible && !gunClose.inCover, JSON.stringify(gunClose.modifiers));
 }
 {
   const m = board("shoot-forest", (b) => b.pen().tile(6, 5, "forest"));
@@ -265,24 +283,87 @@ section("Shooting");
   check("a target standing in woods is in cover", p.inCover);
 }
 {
-  const m = board("shoot-traits");
+  const m = board("shoot-traits", () => {}, 16, 12);
   const shooter = unit(1, 0, "rifleman", 2, 5);
-  check("a riot shield takes 60% off frontal hits", previewShot(m, shooter, unit(2, 1, "riot", 4, 5, { facing: 6 })).damage === 12);
-  check("but not from behind", previewShot(m, shooter, unit(2, 1, "riot", 4, 5, { facing: 2 })).damage === 45);
-  check("heavy armour takes 20% off", previewShot(m, shooter, unit(2, 1, "heavy", 4, 5, { facing: 6 })).damage === 24);
-  const knife = previewShot(m, unit(1, 0, "commando", 2, 5), unit(2, 1, "rifleman", 4, 5, { facing: 2 }));
-  check("a commando's backstab is 2.5x", knife.damage === 88, `${knife.damage}`);
-  const still = previewShot(m, unit(1, 0, "sniper", 0, 5), unit(2, 1, "rifleman", 8, 5));
-  const moved = previewShot(m, unit(1, 0, "sniper", 0, 5, { moved: true }), unit(2, 1, "rifleman", 8, 5));
-  check("a sniper that moved has half accuracy", Math.round(still.chance * 100) === 85 && Math.round(moved.chance * 100) === 43, `${still.chance} / ${moved.chance}`);
-  const close = previewShot(m, unit(1, 0, "sniper", 0, 5), unit(2, 1, "rifleman", 2, 5));
-  check("and half up close", Math.round(close.chance * 100) === 43, `${close.chance}`);
+  const acc = UNITS.rifleman.accuracy;
+  const shieldFront = previewShot(m, shooter, unit(2, 1, "riot", 4, 5, { facing: W }));
+  check("a riot shield makes frontal shots rarely hit: x shieldFrontHit", chanceOf(shieldFront) === pct(acc, RULES.traits.shieldFrontHit), `${shieldFront.chance}`);
+  check("but never impossible", shieldFront.chance > 0 && shieldFront.possible);
+  check("a shield changes the chance, not the damage", shieldFront.damage === UNITS.rifleman.damage, `${shieldFront.damage}`);
+  const shieldBack = previewShot(m, shooter, unit(2, 1, "riot", 4, 5, { facing: E }));
+  check("from behind the shield does nothing", chanceOf(shieldBack) === acc && shieldBack.damage === Math.round(UNITS.rifleman.damage * RULES.flank.rear));
+  check("the heavy is not armoured", previewShot(m, shooter, unit(2, 1, "heavy", 4, 5, { facing: W })).damage === UNITS.rifleman.damage);
+  const knife = previewShot(m, unit(1, 0, "commando", 2, 5), unit(2, 1, "rifleman", 4, 5, { facing: E }));
+  check("a commando's backstab from 2 tiles: backstabMultiplier", !knife.fatal && knife.damage === Math.round(UNITS.commando.damage * RULES.traits.backstabMultiplier), `${knife.damage}`);
+  const sn = UNITS.sniper;
+  const still = previewShot(m, unit(1, 0, "sniper", 0, 5), unit(2, 1, "rifleman", sn.optimal, 5));
+  const moved = previewShot(m, unit(1, 0, "sniper", 0, 5, { moved: true }), unit(2, 1, "rifleman", sn.optimal, 5));
+  check("a braced sniper at its best range: full accuracy", chanceOf(still) === pct(sn.accuracy), `${still.chance}`);
+  check("one that moved: x steadyPenalty", chanceOf(moved) === pct(sn.accuracy, RULES.traits.steadyPenalty), `${moved.chance}`);
+  const at2 = previewShot(m, unit(1, 0, "sniper", 0, 5), unit(2, 1, "rifleman", 2, 5));
+  const at6 = previewShot(m, unit(1, 0, "sniper", 0, 5), unit(2, 1, "rifleman", 6, 5));
+  check("the scope: the closer the target, the worse the aim", at2.chance < at6.chance && at6.chance < still.chance, `${at2.chance} < ${at6.chance} < ${still.chance}`);
+  const at1 = previewShot(m, unit(1, 0, "sniper", 0, 5), unit(2, 1, "rifleman", 1, 5));
+  check("next to it: x scopedCloseAccuracy", chanceOf(at1) === pct(sn.accuracy, RULES.traits.scopedCloseAccuracy), `${at1.chance}`);
+  check("snipers no longer have a cliff at 3 tiles", at2.modifiers.every((x) => !x.label.includes("Moved")), JSON.stringify(at2.modifiers));
 }
 {
-  const p = { possible: true, distance: 1, chance: 0.5, damage: 30, flank: "front" as const, inCover: false, modifiers: [] };
+  // The shotgun: wide arc, damage falling away with distance.
+  const m = board("shoot-shotgun", () => {}, 16, 12);
+  const sg = UNITS.shotgun;
+  const gun = unit(1, 0, "shotgun", 5, 5, { facing: E });
+  const dmg = (x: number) => previewShot(m, gun, unit(2, 1, "rifleman", x, 5, { facing: W })).damage;
+  check("next to the target: full damage", dmg(6) === sg.damage, `${dmg(6)}`);
+  check("damage falls with every tile", dmg(6) > dmg(7) && dmg(7) > dmg(8) && dmg(8) > dmg(9), `${dmg(6)} ${dmg(7)} ${dmg(8)} ${dmg(9)}`);
+  check("to spreadFarDamage at max range", dmg(5 + sg.range) === Math.round(sg.damage * RULES.traits.spreadFarDamage), `${dmg(5 + sg.range)}`);
+  const square = previewShot(m, gun, unit(2, 1, "rifleman", 5, 3));
+  check("a 180 degree arc reaches a target square to its side", sg.arc === 180 && square.possible, square.block);
+  check("which a rifleman's 120 can't", previewShot(m, unit(1, 0, "rifleman", 5, 5, { facing: E }), unit(2, 1, "rifleman", 5, 3)).block === "outside_arc");
+  check("but nothing behind it", previewShot(m, gun, unit(2, 1, "rifleman", 4, 3)).block === "outside_arc");
+}
+{
+  // The officer: allies within commandRange shoot better.
+  const m = board("shoot-officer", () => {}, 16, 12);
+  const s = unit(1, 0, "rifleman", 2, 5);
+  const t = unit(2, 1, "rifleman", 6, 5, { facing: W });
+  const near = unit(3, 0, "officer", 2, 5 + RULES.traits.commandRange);
+  const far = unit(3, 0, "officer", 2, 6 + RULES.traits.commandRange);
+  const led = previewShot(m, s, t, [s, t, near]);
+  const plain = previewShot(m, s, t, [s, t]);
+  check("an officer within commandRange: the accuracy modifier", led.modifiers.some((x) => x.label === "Officer nearby"), JSON.stringify(led.modifiers));
+  check("x commandAccuracy (capped at maxHitChance)", chanceOf(led) === pct(UNITS.rifleman.accuracy, RULES.traits.commandAccuracy), `${led.chance}`);
+  check("and x commandDamage", led.damage === Math.round(UNITS.rifleman.damage * RULES.traits.commandDamage), `${led.damage}`);
+  check("without an officer: plain numbers", chanceOf(plain) === UNITS.rifleman.accuracy && plain.damage === UNITS.rifleman.damage);
+  check("one tile too far: nothing", !previewShot(m, s, t, [s, t, far]).modifiers.some((x) => x.label === "Officer nearby"));
+  check("an enemy officer helps nobody", !previewShot(m, s, t, [s, t, { ...near, seat: 1 }]).modifiers.some((x) => x.label === "Officer nearby"));
+  const self = unit(4, 0, "officer", 2, 5);
+  check("an officer doesn't boost himself", !previewShot(m, self, t, [self, t]).modifiers.some((x) => x.label === "Officer nearby"));
+}
+{
+  const m = board("shoot-unarmed");
+  for (const kind of ["engineer", "riot"] as const) {
+    const u = unit(1, 0, kind, 2, 5);
+    const t = unit(2, 1, "rifleman", 4, 5, { facing: W });
+    check(`a ${kind} can't shoot: blocked as unarmed`, previewShot(m, u, t).block === "unarmed");
+    const st = stateOn("shoot-unarmed", [u, t]);
+    check(`a ${kind} has no targets`, targetsFor(m, st, u).length === 0);
+  }
+  // In a real attack phase the unarmed are never ready to fire.
+  const st = stateOn("shoot-unarmed", [unit(1, 0, "engineer", 2, 5), unit(2, 0, "riot", 2, 6), unit(3, 1, "rifleman", 4, 5, { facing: W })]);
+  const r = resolve(st, [], []).state;
+  check("the unarmed are never ready shooters", readyShooters(m, r, 0).length === 0);
+  check("so the armed side gets the first shot", r.phase === "attack" && r.attackTurn === 1, `${r.phase} ${r.attackTurn}`);
+}
+{
+  const p: ShotPreview = { possible: true, distance: 1, chance: 0.5, damage: 30, fatal: false, splash: 0, flank: "front", inCover: false, modifiers: [] };
+  const [lo, hi] = damageRange(p);
+  check("damage varies by damageVariance either way", lo === Math.round(30 * (1 - RULES.damageVariance)) && hi === Math.round(30 * (1 + RULES.damageVariance)), `${lo}-${hi}`);
   check("a roll at or above the chance misses", !rollShot(p, 0.5).hit && !rollShot(p, 0.9).hit);
-  check("below it hits", rollShot(p, 0.3).hit && !rollShot(p, 0.3).crit && rollShot(p, 0.3).damage === 30);
-  check("the bottom tenth of the hit range crits for 1.5x", rollShot(p, 0.04).crit && rollShot(p, 0.04).damage === 45);
+  check("below it hits; the middle of the spread is the listed damage", rollShot(p, 0.3).hit && !rollShot(p, 0.3).crit && rollShot(p, 0.3).damage === 30);
+  check("the spread roll sets where in the range it falls", rollShot(p, 0.3, 0).damage === lo && rollShot(p, 0.3, 1).damage === hi);
+  check("the bottom tenth of the hit range crits for critMultiplier", rollShot(p, 0.04).crit && rollShot(p, 0.04).damage === Math.round(30 * RULES.critMultiplier));
+  const fatal: ShotPreview = { ...p, damage: 77, fatal: true };
+  check("a fatal shot does exactly its damage: no spread, no crit", rollShot(fatal, 0.01, 0).damage === 77 && !rollShot(fatal, 0.01).crit);
 }
 
 // ---------------------------------------------------------------------------
@@ -297,7 +378,7 @@ interface MoveSpec {
 /** Both seats submit the given moves; returns what the resolution produced. */
 function resolve(state: GameState, seat0: MoveSpec[], seat1: MoveSpec[] = []) {
   const orders = (moves: MoveSpec[]) => ({
-    moves: moves.map((m) => ({ unitId: m.unitId, path: m.path, facing: (m.facing ?? 2) as Unit["facing"] })),
+    moves: moves.map((m) => ({ unitId: m.unitId, path: m.path, facing: (m.facing ?? E) })),
     spawns: [],
   });
   const s = applyAction(state, { type: "orders", seat: 0, orders: orders(seat0) }, roll(0.5)).state;
@@ -325,22 +406,22 @@ const row = (y: number, ...xs: number[]) => xs.map((x) => ({ x, y }));
   check("a unit can follow one moving ahead of it", pos(at(r, 1)) === "4,6" && pos(at(r, 2)) === "5,6", `${pos(at(r, 1))} ${pos(at(r, 2))}`);
 }
 {
-  const s = stateOn("lockstep", [unit(1, 0, "rifleman", 2, 6), unit(2, 1, "rifleman", 5, 6, { facing: 6 })]);
-  const { state: r, events } = resolve(s, [{ unitId: 1, path: row(6, 3, 4, 5, 6), facing: 0 }]);
+  const s = stateOn("lockstep", [unit(1, 0, "rifleman", 2, 6), unit(2, 1, "rifleman", 5, 6, { facing: W })]);
+  const { state: r, events } = resolve(s, [{ unitId: 1, path: row(6, 3, 4, 5, 6), facing: N }]);
   const mover = at(r, 1)!;
   check("walking into an unseen enemy stops you in front of it", pos(mover) === "4,6", pos(mover));
-  check("facing it, not the facing you ordered", mover.facing === 2, `${mover.facing}`);
+  check("facing it, not the facing you ordered", mover.facing === E, `${mover.facing}`);
   check("the move event says it bumped", events.some((e) => e.type === "move" && e.unitId === 1 && e.bumped));
   check("movement is followed by the attack phase", r.phase === "attack" && r.attackTurn === 0, `${r.phase} ${r.attackTurn}`);
 }
 {
   const s = stateOn("lockstep", [unit(1, 0, "rifleman", 2, 6), unit(2, 0, "rifleman", 4, 6)]);
   const code = codeOf(() =>
-    applyAction(s, { type: "orders", seat: 0, orders: { moves: [{ unitId: 1, path: row(6, 3, 4), facing: 2 }], spawns: [] } }, roll(0.5)),
+    applyAction(s, { type: "orders", seat: 0, orders: { moves: [{ unitId: 1, path: row(6, 3, 4), facing: E }], spawns: [] } }, roll(0.5)),
   );
   check("you can't plan to end on a teammate who is staying put", code === "duplicate_destination", code);
   const theirs = codeOf(() =>
-    applyAction(s, { type: "orders", seat: 1, orders: { moves: [{ unitId: 1, path: [], facing: 2 }], spawns: [] } }, roll(0.5)),
+    applyAction(s, { type: "orders", seat: 1, orders: { moves: [{ unitId: 1, path: [], facing: E }], spawns: [] } }, roll(0.5)),
   );
   check("or give orders to someone else's unit", theirs === "not_your_unit", theirs);
 }
@@ -351,17 +432,17 @@ section("Deploying");
 {
   const s = newGame("crossroads", 2);
   const spawn = (x: number, y: number, kind: UnitKind = "rifleman") =>
-    codeOf(() => applyAction(s, { type: "orders", seat: 0, orders: { moves: [], spawns: [{ kind, x, y, facing: 2 }] } }, roll(0.5)));
+    codeOf(() => applyAction(s, { type: "orders", seat: 0, orders: { moves: [], spawns: [{ kind, x, y, facing: E }] } }, roll(0.5)));
   const base = getMap("crossroads").bases[0]![0]!;
   check("deploying on your base is allowed", spawn(base.x, base.y) === "no error", spawn(base.x, base.y));
   check("anywhere else is not", spawn(6, 6) === "bad_spawn_tile");
   check("the enemy base is not yours", spawn(24, 8) === "bad_spawn_tile");
   const tooMuch = codeOf(() =>
-    applyAction(s, { type: "orders", seat: 0, orders: { moves: [], spawns: getMap("crossroads").bases[0]!.slice(0, 3).map((p) => ({ kind: "heavy" as const, ...p, facing: 2 as const })) } }, roll(0.5)),
+    applyAction(s, { type: "orders", seat: 0, orders: { moves: [], spawns: getMap("crossroads").bases[0]!.slice(0, 3).map((p) => ({ kind: "heavy" as const, ...p, facing: E })) } }, roll(0.5)),
   );
   check("you can't spend more than you have", tooMuch === "not_enough_gold", tooMuch);
 
-  let g = applyAction(s, { type: "orders", seat: 0, orders: { moves: [], spawns: [{ kind: "rifleman", x: base.x, y: base.y, facing: 2 }] } }, roll(0.5)).state;
+  let g = applyAction(s, { type: "orders", seat: 0, orders: { moves: [], spawns: [{ kind: "rifleman", x: base.x, y: base.y, facing: E }] } }, roll(0.5)).state;
   check("orders wait until everyone is in", g.phase === "planning" && g.units.length === 0);
   g = applyAction(g, { type: "orders", seat: 1, orders: { moves: [], spawns: [] } }, roll(0.5)).state;
   check("then the unit appears", g.units.length === 1 && g.units[0]!.seat === 0);
@@ -376,10 +457,10 @@ section("Attack turns");
   board("duel");
   // Two riflemen facing each other 4 tiles apart, each with a backup.
   const s = stateOn("duel", [
-    unit(1, 0, "rifleman", 3, 5, { facing: 2 }),
-    unit(2, 0, "rifleman", 3, 6, { facing: 2 }),
-    unit(3, 1, "rifleman", 7, 5, { facing: 6 }),
-    unit(4, 1, "scout", 7, 6, { facing: 6, hp: 10 }),
+    unit(1, 0, "rifleman", 3, 5, { facing: E }),
+    unit(2, 0, "rifleman", 3, 6, { facing: E }),
+    unit(3, 1, "rifleman", 7, 5, { facing: W }),
+    unit(4, 1, "scout", 7, 6, { facing: W, hp: 10 }),
   ]);
   let r = resolve(s, [], []);
   check("round 1: seat 0 shoots first", r.state.phase === "attack" && r.state.attackTurn === 0);
@@ -402,13 +483,13 @@ section("Attack turns");
   check("the unit that was shot at but missed heals", at(r.state, 1)!.hp === 100);
 }
 {
-  const s = stateOn("duel", [unit(1, 0, "rifleman", 3, 5, { facing: 2 }), unit(3, 1, "rifleman", 7, 5, { facing: 6 })]);
+  const s = stateOn("duel", [unit(1, 0, "rifleman", 3, 5, { facing: E }), unit(3, 1, "rifleman", 7, 5, { facing: W })]);
   s.round = 2;
   const r = resolve(s, [], []);
   check("round 2: the lead passes to seat 1", r.state.attackTurn === 1);
 }
 {
-  const s = stateOn("duel", [unit(1, 0, "rifleman", 3, 5, { facing: 2 }), unit(3, 1, "rifleman", 7, 5, { facing: 6, hp: 5 })]);
+  const s = stateOn("duel", [unit(1, 0, "rifleman", 3, 5, { facing: E }), unit(3, 1, "rifleman", 7, 5, { facing: W, hp: 5 })]);
   s.baseOwners = s.baseOwners.map((o) => (o === 1 ? 0 : o));
   let r = resolve(s, [], []);
   r = applyAction(r.state, { type: "attack", seat: 0, unitId: 1, targetId: 3 }, roll(0));
@@ -416,9 +497,124 @@ section("Attack turns");
   check("and the last seat standing wins", r.state.phase === "over" && r.state.winner === 0, `${r.state.phase} ${r.state.winner}`);
 }
 {
-  const s = stateOn("duel", [unit(1, 0, "rifleman", 3, 5, { facing: 2 }), unit(3, 1, "rifleman", 7, 5, { facing: 6 })]);
+  const s = stateOn("duel", [unit(1, 0, "rifleman", 3, 5, { facing: E }), unit(3, 1, "rifleman", 7, 5, { facing: W })]);
   const r = applyAction(s, { type: "resign", seat: 1 }, roll(0));
   check("resigning ends a two-player game", r.state.phase === "over" && r.state.winner === 0);
+}
+
+// ---------------------------------------------------------------------------
+section("Two shots a turn (the commando)");
+
+{
+  board("burst");
+  // A commando behind enemy A (2 tiles: a backstab, not fatal), with B beside it.
+  const start = () =>
+    resolve(
+      stateOn("burst", [
+        unit(1, 0, "commando", 3, 5, { facing: E }),
+        unit(2, 0, "rifleman", 3, 7, { facing: E }),
+        unit(3, 1, "rifleman", 5, 5, { facing: E }),
+        unit(4, 1, "rifleman", 5, 6, { facing: W }),
+      ]),
+      [],
+      [],
+    ).state;
+  const s0 = start();
+  check("seat 0 leads", s0.phase === "attack" && s0.attackTurn === 0);
+  const r1 = applyAction(s0, { type: "attack", seat: 0, unitId: 1, targetId: 3 }, roll(0.99)).state;
+  check("after its first shot the commando's side keeps the turn", r1.attackTurn === 0, `${r1.attackTurn}`);
+  check("with the burst recorded", r1.burst?.unitId === 1 && r1.burst.fired === 1, JSON.stringify(r1.burst));
+  check("it hasn't finished acting", !r1.actedUnitIds.includes(1));
+  check("it is the only ready shooter", readyShooters(getMap("burst"), r1, 0).map((u) => u.id).join() === "1");
+  check("the view tells its own side", viewFor(r1, 0).burst?.unitId === 1 && viewFor(r1, 1).burst === null);
+  const other = codeOf(() => applyAction(r1, { type: "attack", seat: 0, unitId: 2, targetId: 3 }, roll(0.5)));
+  check("another unit can't fire in the middle of it", other === "finish_burst", other);
+  const otherHold = codeOf(() => applyAction(r1, { type: "hold", seat: 0, unitId: 2 }, roll(0.5)));
+  check("or hold", otherHold === "finish_burst", otherHold);
+  const r2 = applyAction(r1, { type: "attack", seat: 0, unitId: 1, targetId: 4 }, roll(0.99));
+  check("the second shot can switch targets", r2.events.some((e) => e.type === "shot" && e.targetId === 4));
+  check("after it the commando has acted", r2.state.actedUnitIds.includes(1) && r2.state.burst === null);
+  check("and the turn passes", r2.state.attackTurn === 1, `${r2.state.attackTurn}`);
+  const third = codeOf(() => applyAction({ ...r2.state, attackTurn: 0 }, { type: "attack", seat: 0, unitId: 1, targetId: 3 }, roll(0.5)));
+  check("no third shot", third === "already_acted", third);
+  const held = applyAction(r1, { type: "hold", seat: 0, unitId: 1 }, roll(0.5)).state;
+  check("holding ends the burst and passes the turn", held.burst === null && held.actedUnitIds.includes(1) && held.attackTurn === 1);
+  const ended = applyAction(r1, { type: "endAttacks", seat: 0 }, roll(0.5)).state;
+  check("so does ending attacks", ended.burst === null && ended.attackTurn === 1);
+  check("a rifleman fires once", UNITS.rifleman.shots === 1 && UNITS.commando.shots === 2);
+
+  // Killing the only target with the first shot ends the burst: nothing left to shoot.
+  const lone = resolve(stateOn("burst", [unit(1, 0, "commando", 3, 5, { facing: E }), unit(3, 1, "rifleman", 5, 5, { facing: E, hp: 5 })]), [], []).state;
+  const k = applyAction(lone, { type: "attack", seat: 0, unitId: 1, targetId: 3 }, roll(0.2)).state;
+  check("a first shot that leaves no target ends the burst", k.burst === null && !at(k, 3), JSON.stringify(k.burst));
+}
+{
+  // Fatal from behind, from the next tile.
+  const m = board("backstab");
+  const c = unit(1, 0, "commando", 4, 5, { facing: E });
+  const t = unit(2, 1, "heavy", 5, 5, { facing: E });
+  const p = previewShot(m, c, t);
+  check("a commando right behind its target: fatal", p.fatal && p.damage === t.hp, `${p.fatal} ${p.damage}`);
+  check("diagonally behind counts too", previewShot(m, unit(1, 0, "commando", 4, 4, { facing: 135 }), { ...t, facing: 120 }).fatal);
+  check("from the side it isn't", !previewShot(m, c, { ...t, facing: N }).fatal);
+  check("nor from two tiles", !previewShot(m, { ...c, x: 3 }, t).fatal);
+  check("only the commando has it", !previewShot(m, unit(1, 0, "rifleman", 4, 5, { facing: E }), t).fatal);
+  const s = resolve(stateOn("backstab", [c, t]), [], []).state;
+  const r = applyAction(s, { type: "attack", seat: 0, unitId: 1, targetId: 2 }, roll(0.5));
+  check("and a hit kills, whatever its health", !at(r.state, 2) && r.events.some((e) => e.type === "shot" && e.killed));
+}
+
+// ---------------------------------------------------------------------------
+section("Explosives (the heavy)");
+
+{
+  // Heavy at (2,5) firing east at T (6,5). X is beside T, O is one of the
+  // heavy's own beside T, W is beside T but behind a wall, Y two tiles off.
+  const m = board("blast", (b) => b.pen().edge(6, 5, "n", "wall"), 16, 12);
+  const setup = (hp: Partial<Record<number, number>> = {}) =>
+    stateOn("blast", [
+      unit(1, 0, "heavy", 2, 5, { facing: E }),
+      unit(2, 1, "rifleman", 6, 5, { facing: W, hp: hp[2] ?? 100 }),
+      unit(3, 1, "rifleman", 7, 5, { facing: W, hp: hp[3] ?? 100 }),
+      unit(4, 0, "rifleman", 6, 6, { facing: N }),
+      unit(5, 1, "rifleman", 6, 4, { facing: S }),
+      unit(6, 1, "rifleman", 8, 5, { facing: W }),
+    ]);
+  const splash = Math.round(UNITS.heavy.damage * RULES.traits.splashDamage);
+  const p = previewShot(m, unit(1, 0, "heavy", 2, 5, { facing: E }), unit(2, 1, "rifleman", 6, 5, { facing: W }));
+  check("a heavy's shot carries a blast: damage x splashDamage", p.splash === splash, `${p.splash}`);
+  check("other classes' don't", previewShot(m, unit(1, 0, "rifleman", 2, 5), unit(2, 1, "rifleman", 6, 5)).splash === 0);
+
+  const fire = (s: GameState, r: number) => {
+    const g = resolve(s, [], []).state;
+    return applyAction(g, { type: "attack", seat: 0, unitId: 1, targetId: 2 }, roll(r));
+  };
+  const hit = fire(setup(), 0.2);
+  const shot = hit.events.find((e): e is Extract<GameEvent, { type: "shot" }> => e.type === "shot")!;
+  check("a direct hit does full damage to the target", shot.hit && at(hit.state, 2)!.hp === 100 - shot.damage, `${at(hit.state, 2)!.hp}`);
+  check("and the blast to an enemy beside it", at(hit.state, 3)!.hp === 100 - splash, `${at(hit.state, 3)!.hp}`);
+  check("and to the shooter's own side", at(hit.state, 4)!.hp === 100 - splash, `${at(hit.state, 4)!.hp}`);
+  check("but not through a wall", at(hit.state, 5)!.hp === 100);
+  check("nor two tiles away", at(hit.state, 6)!.hp === 100);
+  check("the target isn't blasted on top of the hit", !shot.splash.some((x) => x.unitId === 2) && shot.splash.length === 2, JSON.stringify(shot.splash));
+
+  const miss = fire(setup(), 0.9);
+  const missShot = miss.events.find((e): e is Extract<GameEvent, { type: "shot" }> => e.type === "shot")!;
+  check("a miss still lands: the target takes the blast", !missShot.hit && at(miss.state, 2)!.hp === 100 - splash, `${at(miss.state, 2)!.hp}`);
+  check("and so does everyone beside it", at(miss.state, 3)!.hp === 100 - splash && at(miss.state, 4)!.hp === 100 - splash);
+  check("the units caught are marked hit this round (no healing)", at(miss.state, 2)!.damaged && at(miss.state, 4)!.damaged);
+
+  const missKill = fire(setup({ 2: 5 }), 0.9).state;
+  check("a blast can kill the target on a miss", !at(missKill, 2));
+
+  // Splash kills knock a side out like any other.
+  const last = setup({ 2: 5, 3: 5 });
+  last.units = last.units.filter((u) => u.id !== 5 && u.id !== 6);
+  last.baseOwners = last.baseOwners.map((o) => (o === 1 ? 0 : o));
+  const end = fire(last, 0.2);
+  const endShot = end.events.find((e): e is Extract<GameEvent, { type: "shot" }> => e.type === "shot")!;
+  check("a unit killed by the blast is removed", !at(end.state, 3) && endShot.splash.some((x) => x.unitId === 3 && x.killed));
+  check("and losing the last units that way knocks the side out", end.state.seats[1]!.eliminated && end.state.phase === "over" && end.state.winner === 0, `${end.state.phase} ${end.state.winner}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -446,10 +642,23 @@ section("Upkeep: captures, income, healing");
   check("a held post is a spawn tile", mine.some((p) => p.x === 5 && p.y === 5));
   check("the tiles beside it are not", !mine.some((p) => Math.max(Math.abs(p.x - 5), Math.abs(p.y - 5)) === 1));
 
-  s.units = [unit(7, 0, "rifleman", 2, 2, { hp: 50 }), unit(8, 0, "rifleman", 6, 2, { hp: 50 }), unit(9, 0, "engineer", 6, 3)];
+  // A healer at (6,4); medicRange is 2.
+  s.units = [
+    unit(7, 0, "rifleman", 2, 2, { hp: 50 }),
+    unit(8, 0, "rifleman", 6, 2, { hp: 50 }),
+    unit(9, 0, "healer", 6, 4),
+    unit(10, 0, "rifleman", 9, 4, { hp: 50 }),
+    unit(11, 0, "rifleman", 4, 5, { hp: 50, damaged: true }),
+    unit(12, 0, "rifleman", 1, 9, { hp: 50 }),
+    unit(13, 0, "engineer", 2, 9),
+  ];
   s = resolve(s, [], []).state;
-  check("an unhurt unit heals 10 a round", at(s, 7)!.hp === 60, `${at(s, 7)!.hp}`);
-  check("and 10 more beside an engineer", at(s, 8)!.hp === 70, `${at(s, 8)!.hp}`);
+  const heal = RULES.healPerRound;
+  check("an unhurt unit heals healPerRound a round", at(s, 7)!.hp === 50 + heal, `${at(s, 7)!.hp}`);
+  check("and medicHeal more within medicRange of a healer", at(s, 8)!.hp === 50 + heal + RULES.medicHeal, `${at(s, 8)!.hp}`);
+  check("but not one tile further", at(s, 10)!.hp === 50 + heal, `${at(s, 10)!.hp}`);
+  check("a unit hit this round still gets the healer's share", at(s, 11)!.hp === 50 + RULES.medicHeal, `${at(s, 11)!.hp}`);
+  check("engineers no longer heal", at(s, 12)!.hp === 50 + heal, `${at(s, 12)!.hp}`);
 }
 {
   board("timeout");
@@ -484,7 +693,7 @@ section("Bases: captured tile by tile, like command posts");
   // Captured base tiles are spawn tiles for the captor, and lost ones are not for the loser.
   s.units = s.units.filter((u) => u.id !== 1);
   const spawnAt = (seat: number, x: number, y: number) =>
-    codeOf(() => applyAction(s, { type: "orders", seat, orders: { moves: [], spawns: [{ kind: "scout", x, y, facing: 6 }] } }, roll(0.5)));
+    codeOf(() => applyAction(s, { type: "orders", seat, orders: { moves: [], spawns: [{ kind: "scout", x, y, facing: W }] } }, roll(0.5)));
   check("the captor can deploy on a captured base tile", spawnAt(0, 11, 11) === "no error", spawnAt(0, 11, 11));
   check("the side that lost it can't", spawnAt(1, 11, 11) === "bad_spawn_tile", spawnAt(1, 11, 11));
   check("but can still deploy on the base tiles it kept", spawnAt(1, 10, 11) === "no error", spawnAt(1, 10, 11));
@@ -500,7 +709,7 @@ section("Bases: captured tile by tile, like command posts");
   const tiles = baseTiles(getMap("bases-blocked"), 2);
   const a = tiles.findIndex((t) => t.x === 11 && t.y === 11);
   // A defender standing on its own base tile: nothing happens to it.
-  let s = stateOn("bases-blocked", [unit(1, 1, "rifleman", 11, 11), unit(2, 0, "rifleman", 2, 6, { facing: 6 })]);
+  let s = stateOn("bases-blocked", [unit(1, 1, "rifleman", 11, 11), unit(2, 0, "rifleman", 2, 6, { facing: W })]);
   s = resolve(s, [], []).state;
   check("a defender standing on its own base tile keeps it", s.baseOwners[a] === 1);
   // An enemy on a tile already neutral (or theirs) after the other seat's unit leaves...
@@ -574,6 +783,42 @@ section("Fog of war");
   check("when the game is over the fog lifts", over.units.length === 4);
 }
 
+{
+  // The sniper's scope: a long, narrow strip of sight straight ahead.
+  const m = board("scope", () => {}, 30, 30);
+  const idx = (x: number, y: number) => y * m.width + x;
+  const seesFrom = (u: Unit) => visibleTiles(m, stateOn("scope", [u]), 0);
+  const sniper = seesFrom(unit(1, 0, "sniper", 2, 15, { facing: E }));
+  check("a sniper sees 18 tiles straight ahead", sniper.has(idx(20, 15)));
+  check("but not as far off to the side", !sniper.has(idx(15, 2)));
+  check("nor behind", !seesFrom(unit(1, 0, "sniper", 20, 15, { facing: E })).has(idx(2, 15)));
+  check("past its plain sight radius only along the strip", !sniper.has(idx(2, 15 - 12)));
+  check("turned north, the strip turns with it", !seesFrom(unit(1, 0, "sniper", 2, 15, { facing: N })).has(idx(20, 15)) && seesFrom(unit(1, 0, "sniper", 15, 25, { facing: N })).has(idx(15, 7)));
+  check("a rifleman in the same spot sees nothing that far", !seesFrom(unit(1, 0, "rifleman", 2, 15, { facing: E })).has(idx(20, 15)));
+  const walled = board("scope-wall", (b) => b.pen().edge(10, 15, "w", "wall"), 30, 30);
+  check("walls still block it", !visibleTiles(walled, stateOn("scope-wall", [unit(1, 0, "sniper", 2, 15, { facing: E })]), 0).has(idx(20, 15)));
+}
+
+// ---------------------------------------------------------------------------
+section("Facings are any whole degree");
+
+{
+  const m = getMap("lockstep");
+  const s = stateOn("lockstep", [unit(1, 0, "rifleman", 2, 6)]);
+  const turn = (facing: number) => codeOf(() => validateOrders(m, s, 0, { moves: [{ unitId: 1, path: [], facing }], spawns: [] }));
+  check("0 and 359 are facings", isFacing(0) && isFacing(359) && turn(0) === "no error" && turn(359) === "no error");
+  check("so is 37: not just eighths", turn(37) === "no error");
+  check("360 is not", !isFacing(360) && turn(360) === "bad_path", turn(360));
+  check("nor fractions", turn(7.5) === "bad_path", turn(7.5));
+  check("nor negatives", turn(-1) === "bad_path", turn(-1));
+  const g = newGame("crossroads", 2);
+  const base = getMap("crossroads").bases[0]![0]!;
+  const spawn = codeOf(() => validateOrders(getMap("crossroads"), g, 0, { moves: [], spawns: [{ kind: "rifleman", ...base, facing: 400 }] }));
+  check("a deployment's facing is checked too", spawn === "bad_spawn_tile", spawn);
+  const r = resolve(s, [{ unitId: 1, path: [], facing: 213 }]).state;
+  check("a unit ends facing exactly what it was ordered", at(r, 1)!.facing === 213, `${at(r, 1)!.facing}`);
+}
+
 // ---------------------------------------------------------------------------
 section("Replay");
 
@@ -582,8 +827,8 @@ section("Replay");
     let g = newGame("crossroads", 2);
     const map = getMap("crossroads");
     const actions: Action[] = [
-      { type: "orders", seat: 0, orders: { moves: [], spawns: map.bases[0]!.slice(0, 2).map((p) => ({ kind: "rifleman" as const, ...p, facing: 2 as const })) } },
-      { type: "orders", seat: 1, orders: { moves: [], spawns: map.bases[1]!.slice(0, 2).map((p) => ({ kind: "scout" as const, ...p, facing: 6 as const })) } },
+      { type: "orders", seat: 0, orders: { moves: [], spawns: map.bases[0]!.slice(0, 2).map((p) => ({ kind: "rifleman" as const, ...p, facing: E })) } },
+      { type: "orders", seat: 1, orders: { moves: [], spawns: map.bases[1]!.slice(0, 2).map((p) => ({ kind: "scout" as const, ...p, facing: W })) } },
     ];
     actions.forEach((a, i) => (g = applyAction(g, a, streamFor("seed-1", i)).state));
     return g;
@@ -621,6 +866,39 @@ section("Tuning files: checked, and snapshotted per game");
   check("a misspelt field is caught", typo.includes("rules.json") && typo.includes('"statGold"'), typo);
   const flank = errorOf((t) => ((t.rules.flank as Record<string, unknown>).rear = null));
   check("nested rule numbers are checked too", flank.includes('"flank.rear"'), flank);
+  const shots = errorOf((t) => (t.units.commando!.shots = 0));
+  check("a unit needs at least one shot", shots.includes("commando.json") && shots.includes('"shots"'), shots);
+  check("there are ten classes, in the shop's order", UNIT_KINDS.length === 10 && UNIT_KINDS[0] === "rifleman" && UNIT_KINDS[9] === "officer", UNIT_KINDS.join(","));
+}
+{
+  // A snapshot from before version 2: eight classes, the breacher, old fields.
+  const old = structuredClone(FILE_TUNING) as unknown as { rules: Record<string, unknown>; units: Record<string, Record<string, unknown>> };
+  old.units.breacher = { ...old.units.shotgun!, damage: 77 };
+  for (const k of ["shotgun", "healer", "officer"]) delete old.units[k];
+  for (const u of Object.values(old.units)) delete u.shots;
+  const traits = old.rules.traits as Record<string, unknown>;
+  traits.shieldFrontDamage = 0.4;
+  traits.steadyMinRange = 3;
+  delete traits.splashDamage;
+  delete old.rules.damageVariance;
+  old.units.rifleman!.accuracy = 61;
+  let up: Tuning | null = null;
+  let err = "";
+  try {
+    up = upgradeSnapshot(old as unknown as { rules: unknown; units: Record<string, unknown> });
+  } catch (e) {
+    err = String(e);
+  }
+  check("an old snapshot upgrades to a valid tuning", !!up, err);
+  if (up) {
+    check("with all ten classes", UNIT_KINDS.every((k) => up!.units[k]?.kind === k));
+    check("the breacher's numbers become the shotgun's", up.units.shotgun.damage === 77, `${up.units.shotgun.damage}`);
+    check("numbers it had are kept", up.units.rifleman.accuracy === 61);
+    check("fields it never had come from the files", up.rules.traits.splashDamage === FILE_TUNING.rules.traits.splashDamage && up.units.commando.shots === FILE_TUNING.units.commando.shots);
+    check("fields that no longer exist are dropped", !("shieldFrontDamage" in up.rules.traits) && !("steadyMinRange" in up.rules.traits));
+  }
+  const current = upgradeSnapshot({ version: 2, ...(structuredClone(FILE_TUNING) as unknown as { rules: unknown; units: Record<string, unknown> }) });
+  check("a current snapshot passes through unchanged", JSON.stringify(current) === JSON.stringify(FILE_TUNING));
 }
 {
   // A game played under one tuning replays identically under its snapshot,
@@ -630,7 +908,7 @@ section("Tuning files: checked, and snapshotted per game");
   const changed: Tuning = structuredClone(FILE_TUNING);
   changed.units.rifleman.damage = 99;
   const play = () => {
-    let g = stateOn("snapshot", [unit(1, 0, "rifleman", 3, 5, { facing: 2 }), unit(2, 1, "heavy", 7, 5, { facing: 6 })]);
+    let g = stateOn("snapshot", [unit(1, 0, "rifleman", 3, 5, { facing: E }), unit(2, 1, "heavy", 7, 5, { facing: W })]);
     const log: Action[] = [
       { type: "orders", seat: 0, orders: { moves: [], spawns: [] } },
       { type: "orders", seat: 1, orders: { moves: [], spawns: [] } },

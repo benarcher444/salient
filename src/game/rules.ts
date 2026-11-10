@@ -3,11 +3,12 @@
 // way the state changes, and it is deterministic given the roll function, so
 // a game is fully described by its seed and its list of actions.
 import { RULES } from "./constants.js";
-import { previewShot, rollShot } from "./combat.js";
+import { blastTiles, previewShot, rollShot } from "./combat.js";
 import { facingToward, samePoint } from "./grid.js";
 import { getMap } from "./maps.js";
 import { validatePath } from "./movement.js";
 import { UNITS, UNIT_KINDS, hasTrait } from "./units.js";
+import { isArmed } from "./combat.js";
 import { baseTiles, baseTilesOwned, isSpawnTile, unitVisibleTo, visibleTiles } from "./visibility.js";
 import {
   RuleError,
@@ -44,6 +45,7 @@ export function newGame(mapId: string, seatCount: number): GameState {
     orders: Array.from({ length: seatCount }, () => null),
     attackTurn: null,
     actedUnitIds: [],
+    burst: null,
     winner: null,
   };
 }
@@ -74,6 +76,8 @@ export function applyAction(prev: GameState, action: Action, roll: () => number)
       requireAttackTurn(state, action.seat);
       const unit = ownUnit(state, action.seat, action.unitId);
       if (state.actedUnitIds.includes(unit.id)) throw new RuleError("already_acted");
+      if (state.burst && state.burst.unitId !== unit.id) throw new RuleError("finish_burst");
+      state.burst = null;
       state.actedUnitIds.push(unit.id);
       events.push({ type: "hold", unitId: unit.id, seat: action.seat });
       passAttackTurn(map, state, action.seat, events);
@@ -81,6 +85,7 @@ export function applyAction(prev: GameState, action: Action, roll: () => number)
     }
     case "endAttacks":
       requireAttackTurn(state, action.seat);
+      state.burst = null;
       for (const u of state.units) if (u.seat === action.seat && !state.actedUnitIds.includes(u.id)) state.actedUnitIds.push(u.id);
       passAttackTurn(map, state, action.seat, events);
       break;
@@ -92,6 +97,7 @@ export function applyAction(prev: GameState, action: Action, roll: () => number)
           // Their units are gone, so whoever was due to shoot may have lost
           // every target. Re-pick the attacker rather than leave them stuck.
           const current = state.attackTurn;
+          if (state.burst && !state.units.some((u) => u.id === state.burst!.unitId)) state.burst = null;
           if (current === null || current === action.seat || readyShooters(map, state, current).length === 0) {
             passAttackTurn(map, state, current ?? action.seat, events);
           }
@@ -120,6 +126,7 @@ export function validateOrders(map: MapDef, state: GameState, seat: Seat, orders
     if (seen.has(m.unitId)) throw new RuleError("duplicate_order");
     seen.add(m.unitId);
     const unit = ownUnit(state, seat, m.unitId);
+    if (!isFacing(m.facing)) throw new RuleError("bad_path", `facing ${m.facing}`);
     const verdict = validatePath(map, unit, m.path);
     if (verdict !== "ok") throw new RuleError(verdict, `unit ${unit.id}`);
     byUnit.set(unit.id, m);
@@ -142,6 +149,7 @@ export function validateOrders(map: MapDef, state: GameState, seat: Seat, orders
   for (const s of orders.spawns) {
     if (!UNIT_KINDS.includes(s.kind)) throw new RuleError("bad_spawn_tile", `kind ${s.kind}`);
     if (!isSpawnTile(map, state, seat, s)) throw new RuleError("bad_spawn_tile");
+    if (!isFacing(s.facing)) throw new RuleError("bad_spawn_tile", `facing ${s.facing}`);
     const k = `${s.x},${s.y}`;
     if (spawnTilesUsed.has(k) || destinations.has(k)) throw new RuleError("spawn_tile_occupied");
     // A teammate standing there now is in the way even if it is ordered off:
@@ -160,6 +168,7 @@ function maybeResolvePlanning(map: MapDef, state: GameState, events: GameEvent[]
   resolveMoves(map, state, events);
   state.phase = "attack";
   state.actedUnitIds = [];
+  state.burst = null;
   events.push({ type: "phase", phase: "attack" });
   state.attackTurn = nextAttacker(map, state, null);
   if (state.attackTurn === null) endRound(map, state, events);
@@ -298,17 +307,26 @@ export function initiativeOrder(state: GameState): Seat[] {
 
 /** Enemies this unit could shoot right now. */
 export function targetsFor(map: MapDef, state: GameState, unit: Unit, tiles?: ReadonlySet<number>): Unit[] {
+  if (!isArmed(unit.kind)) return [];
   const seen = tiles ?? visibleTiles(map, state, unit.seat);
   return state.units.filter(
     (t) => t.seat !== unit.seat && unitVisibleTo(map, state, unit.seat, t, seen) && previewShot(map, unit, t).possible,
   );
 }
 
-/** Units of this seat that have not acted and have something to shoot at. */
+/**
+ * Units of this seat that have not acted and have something to shoot at.
+ * While one of its units is part way through its shots, only that one.
+ */
 export function readyShooters(map: MapDef, state: GameState, seat: Seat): Unit[] {
   const tiles = visibleTiles(map, state, seat);
+  const burst = state.burst;
   return state.units.filter(
-    (u) => u.seat === seat && !state.actedUnitIds.includes(u.id) && targetsFor(map, state, u, tiles).length > 0,
+    (u) =>
+      u.seat === seat &&
+      !state.actedUnitIds.includes(u.id) &&
+      (!burst || burst.unitId === u.id || !state.units.some((b) => b.id === burst.unitId && b.seat === seat)) &&
+      targetsFor(map, state, u, tiles).length > 0,
   );
 }
 
@@ -352,22 +370,38 @@ function attack(
   requireAttackTurn(state, seat);
   const shooter = ownUnit(state, seat, unitId);
   if (state.actedUnitIds.includes(shooter.id)) throw new RuleError("already_acted");
+  if (state.burst && state.burst.unitId !== shooter.id) throw new RuleError("finish_burst");
   const target = state.units.find((u) => u.id === targetId);
   if (!target) throw new RuleError("no_such_unit");
   if (!targetsFor(map, state, shooter).includes(target)) throw new RuleError("cannot_shoot");
 
-  const preview = previewShot(map, shooter, target);
-  const result = rollShot(preview, roll());
-  state.actedUnitIds.push(shooter.id);
-  let killed = false;
-  if (result.hit) {
-    target.hp -= result.damage;
-    target.damaged = true;
-    if (target.hp <= 0) {
-      killed = true;
-      state.units = state.units.filter((u) => u.id !== target.id);
+  const preview = previewShot(map, shooter, target, state.units);
+  const result = rollShot(preview, roll(), roll());
+  const fired = state.burst?.unitId === shooter.id ? state.burst.fired + 1 : 1;
+  const hurt = (u: Unit, damage: number) => {
+    u.hp -= damage;
+    u.damaged = true;
+    return u.hp <= 0;
+  };
+  const dead = new Set<number>();
+  if (result.hit && hurt(target, result.damage)) dead.add(target.id);
+
+  // Explosives: the shell lands on the target's tile whether it hits or not.
+  // A direct hit does full damage to the target and the blast to everyone
+  // round it; a miss does the blast to the target as well. Friend and foe.
+  const splash: Extract<GameEvent, { type: "shot" }>["splash"] = [];
+  if (preview.splash > 0) {
+    for (const p of blastTiles(map, target)) {
+      const u = state.units.find((o) => o.x === p.x && o.y === p.y);
+      if (!u || (u === target && result.hit)) continue;
+      const killedNow = !dead.has(u.id) && hurt(u, preview.splash);
+      if (killedNow) dead.add(u.id);
+      splash.push({ unitId: u.id, seat: u.seat, at: { x: u.x, y: u.y }, damage: preview.splash, killed: killedNow });
     }
   }
+  const killed = dead.has(target.id) && result.hit;
+  const lostSeats = new Set(state.units.filter((u) => dead.has(u.id)).map((u) => u.seat));
+  state.units = state.units.filter((u) => !dead.has(u.id));
   events.push({
     type: "shot",
     shooterId: shooter.id,
@@ -381,12 +415,27 @@ function attack(
     crit: result.crit,
     damage: result.damage,
     killed,
+    splash,
   });
   // Losing your last unit with no base tiles left knocks you out at once.
-  if (killed && knockedOut(state, target.seat)) {
-    eliminate(state, target.seat, events);
-    if (checkWinner(state, events)) return;
+  let out = false;
+  for (const s of lostSeats) {
+    if (knockedOut(state, s)) {
+      eliminate(state, s, events);
+      out = true;
+    }
   }
+  if (out && checkWinner(state, events)) return;
+  if (state.seats[seat]!.eliminated) return passAttackTurn(map, state, seat, events);
+
+  // A unit with shots left keeps its side's turn, if it is still standing and has a target.
+  const alive = state.units.some((u) => u.id === shooter.id);
+  if (alive && fired < UNITS[shooter.kind].shots && targetsFor(map, state, shooter).length > 0) {
+    state.burst = { unitId: shooter.id, fired };
+    return;
+  }
+  state.burst = null;
+  if (alive) state.actedUnitIds.push(shooter.id);
   passAttackTurn(map, state, seat, events);
 }
 
@@ -398,6 +447,7 @@ function passAttackTurn(map: MapDef, state: GameState, seat: Seat, events: GameE
 // --- Upkeep ----------------------------------------------------------------
 
 function endRound(map: MapDef, state: GameState, events: GameEvent[]) {
+  state.burst = null;
   const unitAt = (p: Point) => state.units.find((u) => u.x === p.x && u.y === p.y);
 
   // Captures. A unit standing on a site its side does not own takes it one
@@ -433,7 +483,7 @@ function endRound(map: MapDef, state: GameState, events: GameEvent[]) {
     const max = UNITS[u.kind].hp;
     let heal = u.damaged ? 0 : RULES.healPerRound;
     const medicNearby = state.units.some(
-      (m) => m !== u && m.seat === u.seat && hasTrait(m.kind, "medic") && Math.max(Math.abs(m.x - u.x), Math.abs(m.y - u.y)) <= 1,
+      (m) => m !== u && m.seat === u.seat && hasTrait(m.kind, "medic") && Math.max(Math.abs(m.x - u.x), Math.abs(m.y - u.y)) <= RULES.medicRange,
     );
     if (medicNearby) heal += RULES.medicHeal;
     u.hp = Math.min(max, u.hp + heal);
@@ -490,4 +540,5 @@ function finish(state: GameState, winner: Seat | null, events: GameEvent[]) {
   events.push({ type: "gameOver", winner });
 }
 
-export const isFacing = (n: number): n is Facing => Number.isInteger(n) && n >= 0 && n <= 7;
+/** A facing is whole degrees, 0..359. */
+export const isFacing = (n: number): n is Facing => Number.isInteger(n) && n >= 0 && n < 360;

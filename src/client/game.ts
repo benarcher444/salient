@@ -1,6 +1,6 @@
 // The battle page: connects to the game, turns taps into orders, and keeps the
 // board, panel and top bar in step with the server.
-import { FACING_NAME, facingToward, samePoint } from "../game/grid.js";
+import { facingName, facingToward, normFacing, samePoint } from "../game/grid.js";
 import { getMap, registerMap } from "../game/maps.js";
 import { useTuning } from "../game/tuning.js";
 import { pathTo } from "../game/movement.js";
@@ -54,6 +54,7 @@ const s: ClientState = {
   hover: null,
   log: [],
   pending: false,
+  aiming: null,
 };
 
 const canvas = document.getElementById("board") as HTMLCanvasElement;
@@ -67,6 +68,8 @@ const board = new Board(canvas, s);
 
 let resignAsked = false;
 function refresh() {
+  // Aiming belongs to one selection: anything else selected (or planning over) ends it.
+  if (s.aiming && (!aimTarget() || JSON.stringify(s.selected) !== s.aiming.selection)) s.aiming = null;
   renderTopBar(s);
   panel.innerHTML = renderPanel(s);
   if (resignAsked) {
@@ -158,6 +161,8 @@ function onMessage(m: ServerMessage) {
   s.players = m.players;
   s.view = v;
   s.pending = false;
+  // The first view says where this player's base is: frame the board on it.
+  if (!before && !board.userMoved) board.fit();
 
   const newRound = !before || before.round !== v.round || before.phase !== v.phase;
   if (v.phase === "planning") {
@@ -230,6 +235,13 @@ function logEvent(e: GameEvent, round: number) {
       html = e.hit
         ? `${name(e.shooterId)} ${e.crit ? "landed a critical hit on" : "hit"} ${target} for <strong>${e.damage}</strong>${e.killed ? ", killing it" : ""}.`
         : `${name(e.shooterId)} missed ${target} (${Math.round(e.chance * 100)}%).`;
+      // An explosive's blast: everyone it caught, the target too on a miss.
+      if (e.splash.length) {
+        const caught = e.splash.map(
+          (x) => `${name(x.unitId).replace(/^Your/, "your")} <strong>${x.damage}</strong>${x.killed ? " (killed)" : ""}`,
+        );
+        html += ` The blast hit ${caught.join(", ")}.`;
+      }
       break;
     }
     case "capture":
@@ -277,25 +289,26 @@ function warnBaseLoss(events: GameEvent[]) {
 
 // --- Taps on the board -------------------------------------------------------------
 
-function onTap(p: Point) {
+/** A tap on a tile, from the pointer or (Enter) the keyboard cursor. */
+function onTap(p: Point, pointer = false) {
   const v = s.view;
   if (!v) return;
   resignAsked = false;
   const u = unitAt(s, p);
-  if (canPlan(s)) planningTap(p, u);
+  if (canPlan(s)) planningTap(p, u, pointer);
   else if (v.phase === "attack" && isMyAttackTurn(s)) attackTap(u);
   else s.selected = u ? { type: "unit", id: u.id } : null;
   refresh();
 }
 
-function planningTap(p: Point, u: Unit | undefined) {
+function planningTap(p: Point, u: Unit | undefined, pointer: boolean) {
   const sel = s.selected;
   const selUnit = sel?.type === "unit" ? unitById(s, sel.id) : undefined;
   if (selUnit && isMine(s, selUnit)) {
     const order = moveOrderFor(s, selUnit.id);
-    // Tapping the ghost at the end of a route turns it.
+    // Tapping the ghost at the end of a route aims it: it follows the pointer until the next tap.
     if (order && order.path.length && samePoint(plannedEnd(s, selUnit), p)) {
-      order.facing = ((order.facing + 1) % 8) as Facing;
+      startAim();
       return;
     }
     if (u?.id === selUnit.id) {
@@ -318,12 +331,16 @@ function planningTap(p: Point, u: Unit | undefined) {
         existing.path = path;
         existing.facing = facing;
       } else s.draft.moves.push({ unitId: selUnit.id, path, facing });
+      // With the mouse, the unit then turns to follow the pointer until the next click.
+      if (pointer) startAim();
       return;
     }
   }
   const spawnIndex = s.draft.spawns.findIndex((sp) => sp.x === p.x && sp.y === p.y);
   if (spawnIndex >= 0) {
-    s.selected = { type: "spawn", index: spawnIndex };
+    // A second tap on a selected deployment aims it.
+    if (sel?.type === "spawn" && sel.index === spawnIndex) startAim();
+    else s.selected = { type: "spawn", index: spawnIndex };
     return;
   }
   if (!u && mySpawnTiles(s).some((t) => samePoint(t, p))) {
@@ -371,18 +388,16 @@ panel.addEventListener("click", (e) => {
       break;
     }
     case "set-facing": {
-      if (sel?.type !== "unit") break;
-      const facing = Number(el.dataset.facing) as Facing;
-      const order = moveOrderFor(s, sel.id);
-      if (order) order.facing = facing;
-      else s.draft.moves.push({ unitId: sel.id, path: [], facing });
+      s.aiming = null;
+      aimTarget()?.set(normFacing(Number(el.dataset.facing)));
       break;
     }
+    case "aim":
+      if (s.aiming) cancelAim();
+      else startAim();
+      break;
     case "clear-order":
       s.draft.moves = s.draft.moves.filter((m) => m.unitId !== Number(el.dataset.unit));
-      break;
-    case "spawn-facing":
-      if (sel?.type === "spawn" && s.draft.spawns[sel.index]) s.draft.spawns[sel.index]!.facing = Number(el.dataset.facing) as Facing;
       break;
     case "cancel-spawn":
       if (sel?.type === "spawn") s.draft.spawns.splice(sel.index, 1);
@@ -440,13 +455,66 @@ function onHover(sx: number, sy: number | null) {
     return;
   }
   s.hover = tile;
+  if (s.aiming) {
+    faceToward(board.camera.toWorld(sx, sy));
+    refresh();
+  }
   showTooltip(tile, sx, sy);
+}
+
+// --- Aiming ------------------------------------------------------------------------
+// Facings are any whole degree. Q and E turn in steps; aiming turns the unit to
+// follow the pointer and sets it on the next tap; R points it at the cursor.
+
+/** The facing being set: the selected unit's (through its order, made if need be) or a deployment's. */
+function aimTarget(): { anchor: Point; get: () => Facing; set: (f: Facing) => void } | null {
+  const sel = s.selected;
+  if (!canPlan(s)) return null;
+  if (sel?.type === "unit") {
+    const u = unitById(s, sel.id);
+    if (!u || !isMine(s, u)) return null;
+    return {
+      anchor: plannedEnd(s, u),
+      get: () => moveOrderFor(s, u.id)?.facing ?? u.facing,
+      set: (facing) => {
+        const order = moveOrderFor(s, u.id);
+        if (order) order.facing = facing;
+        else s.draft.moves.push({ unitId: u.id, path: [], facing });
+      },
+    };
+  }
+  if (sel?.type === "spawn") {
+    const sp = s.draft.spawns[sel.index];
+    if (!sp) return null;
+    return { anchor: sp, get: () => sp.facing, set: (f) => (sp.facing = f) };
+  }
+  return null;
+}
+
+/** Turn the selected unit or deployment to face a point (in tiles, fractions allowed). */
+function faceToward(world: Point): boolean {
+  const t = aimTarget();
+  if (!t) return false;
+  const from = { x: t.anchor.x + 0.5, y: t.anchor.y + 0.5 };
+  if (Math.hypot(world.x - from.x, world.y - from.y) < 0.35) return false;
+  t.set(facingToward(from, world));
+  return true;
+}
+
+function startAim() {
+  const t = aimTarget();
+  if (t) s.aiming = { before: t.get(), selection: JSON.stringify(s.selected) };
+}
+
+function cancelAim() {
+  if (s.aiming) aimTarget()?.set(s.aiming.before);
+  s.aiming = null;
 }
 
 function showTooltip(tile: Point, sx: number, sy: number) {
   const u = unitAt(s, tile);
   if (u) {
-    tooltip.innerHTML = `<strong>${unitLabel(s, u)}</strong><span>${u.hp} / ${UNITS[u.kind].hp} hp · facing ${FACING_NAME[u.facing]}</span>`;
+    tooltip.innerHTML = `<strong>${unitLabel(s, u)}</strong><span>${u.hp} / ${UNITS[u.kind].hp} hp · facing ${facingName(u.facing)}</span>`;
     tooltip.style.left = `${sx + 14}px`;
     tooltip.style.top = `${sy + 14}px`;
     tooltip.hidden = false;
@@ -471,12 +539,22 @@ function cursorTo(p: Point) {
 attachGestures(canvas, board.camera, {
   tap: (sx, sy, button) => {
     const p = board.tileAt(sx, sy);
+    if (s.aiming) {
+      // A tap sets the aim where the pointer is; a right click puts it back.
+      if (button === 2) cancelAim();
+      else {
+        faceToward(board.camera.toWorld(sx, sy));
+        s.aiming = null;
+      }
+      refresh();
+      return;
+    }
     if (button === 2) {
       s.selected = null;
       refresh();
       return;
     }
-    if (p) onTap(p);
+    if (p) onTap(p, true);
   },
   hover: onHover,
   changed: () => {
@@ -508,25 +586,13 @@ function currentShooter(): Unit | undefined {
   return u && isMine(s, u) ? u : undefined;
 }
 
-function rotateSelected(step: 1 | 7) {
-  const sel = s.selected;
-  if (!canPlan(s)) return false;
-  if (sel?.type === "unit") {
-    const u = unitById(s, sel.id);
-    if (!u || !isMine(s, u)) return false;
-    const order = moveOrderFor(s, u.id);
-    const next = (((order?.facing ?? u.facing) + step) % 8) as Facing;
-    if (order) order.facing = next;
-    else s.draft.moves.push({ unitId: u.id, path: [], facing: next });
-    return true;
-  }
-  if (sel?.type === "spawn") {
-    const sp = s.draft.spawns[sel.index];
-    if (!sp) return false;
-    sp.facing = ((sp.facing + step) % 8) as Facing;
-    return true;
-  }
-  return false;
+/** Turn the selected unit or deployment by `step` degrees (clockwise positive). */
+function rotateSelected(step: number) {
+  const t = aimTarget();
+  if (!t) return false;
+  s.aiming = null;
+  t.set(normFacing(t.get() + step));
+  return true;
 }
 
 /** Deploy unit class n (1-based, shop order) on the selected base tile or the cursor's. */
@@ -614,6 +680,7 @@ function onKey(e: KeyboardEvent): boolean {
   }
   if (key === "Escape") {
     if (!keyHelp.hidden) keyHelp.hidden = true;
+    else if (s.aiming) cancelAim();
     else s.selected = null;
     resignAsked = false;
     return true;
@@ -626,19 +693,28 @@ function onKey(e: KeyboardEvent): boolean {
     return true;
   }
   if ((key === "Enter" || key === " ") && !e.shiftKey) {
+    if (s.aiming) {
+      // Enter sets the aim as it is; the cursor keys turned nothing.
+      s.aiming = null;
+      return true;
+    }
     if (s.hover) onTap(s.hover);
     return true;
   }
   if (key === "Enter" && e.shiftKey) return finish();
-  if (/^[1-9]$/.test(key)) {
-    const n = Number(key);
+  if (/^[0-9]$/.test(key)) {
+    const n = key === "0" ? 10 : Number(key);
     return s.view?.phase === "attack" ? pickTarget(n) : deployByNumber(n);
   }
   switch (key) {
     case "q":
-      return rotateSelected(7);
+      return rotateSelected(e.shiftKey ? -45 : -15);
     case "e":
-      return rotateSelected(1);
+      return rotateSelected(e.shiftKey ? 45 : 15);
+    case "r":
+      if (!s.hover) return false;
+      s.aiming = null;
+      return faceToward({ x: s.hover.x + 0.5, y: s.hover.y + 0.5 });
     case "Tab":
       return cycleUnits(e.shiftKey);
     case "t":
@@ -679,7 +755,7 @@ function onKey(e: KeyboardEvent): boolean {
     case "_":
       zoomBy(0.8);
       return true;
-    case "0":
+    case "z":
       board.fit();
       return true;
   }
@@ -726,6 +802,8 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
 // reaching into the state, so they exercise the same path as a player.
 (window as unknown as { __salient: unknown }).__salient = {
   screenOf: (x: number, y: number) => {
+    // The board shows part of the map: pan to the tile first, as a player would.
+    if (board.reveal({ x, y })) board.userMoved = true;
     const p = board.camera.toScreen(x + 0.5, y + 0.5);
     const r = canvas.getBoundingClientRect();
     return { x: r.left + p.x, y: r.top + p.y };

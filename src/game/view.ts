@@ -40,6 +40,8 @@ export interface PlayerView {
   acted: number[];
   /** Own units that can still shoot something, when it is the viewer's attack turn. */
   readyShooters: number[];
+  /** The viewer's own unit part way through its shots (a commando's second), if any. */
+  burst: { unitId: number; fired: number } | null;
   winner: Seat | null;
 }
 
@@ -75,6 +77,7 @@ export function viewFor(state: GameState, seat: Seat | null): PlayerView {
     acted: state.actedUnitIds.filter((id) => units.some((u) => u.id === id && u.seat === seat)),
     readyShooters:
       seat !== null && state.attackTurn === seat ? readyShooters(map, state, seat).map((u) => u.id) : [],
+    burst: state.burst && units.some((u) => u.id === state.burst!.unitId && u.seat === seat) ? { ...state.burst } : null,
     winner: state.winner,
   };
 }
@@ -105,7 +108,13 @@ export function eventsFor(
       case "hold":
         return e.seat === seat;
       case "shot":
-        return e.shooterSeat === seat || e.targetSeat === seat || known.has(e.shooterId) || known.has(e.targetId);
+        return (
+          e.shooterSeat === seat ||
+          e.targetSeat === seat ||
+          known.has(e.shooterId) ||
+          known.has(e.targetId) ||
+          e.splash.some((x) => x.seat === seat || known.has(x.unitId))
+        );
       default:
         return true;
     }
@@ -133,6 +142,7 @@ export function stateFromView(v: PlayerView): GameState {
     orders: v.seats.map(() => null),
     attackTurn: v.attackTurn,
     actedUnitIds: v.acted,
+    burst: v.burst,
     winner: v.winner,
   };
 }

@@ -1,0 +1,15 @@
+{
+  "name": "Shotgun",
+  "role": "Wide spread, rarely misses, brutal up close. Weak past a few tiles.",
+  "cost": 110,
+  "hp": 110,
+  "move": 5,
+  "sight": 7,
+  "range": 4,
+  "optimal": 2,
+  "accuracy": 95,
+  "damage": 60,
+  "arc": 180,
+  "shots": 1,
+  "traits": ["spread", "closeQuarters"]
+}

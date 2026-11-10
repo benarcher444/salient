@@ -15,6 +15,12 @@ export class Camera {
   constructor(
     private readonly worldW: number,
     private readonly worldH: number,
+    /**
+     * Fill the view: the map always covers the whole canvas, with nothing
+     * round it, so it can't be zoomed out past that or panned off an edge.
+     * The battle uses it; the editor wants to see the whole map at once.
+     */
+    private readonly fill = false,
   ) {}
 
   toWorld(sx: number, sy: number): { x: number; y: number } {
@@ -26,10 +32,20 @@ export class Camera {
   }
 
   fit(viewW: number, viewH: number, pad = 12) {
-    this.scale = Math.min((viewW - pad * 2) / this.worldW, (viewH - pad * 2) / this.worldH);
-    this.minScale = Math.min(this.scale * 0.8, 16);
+    if (this.fill) {
+      this.scale = this.minScale = this.coverScale(viewW, viewH);
+      this.maxScale = Math.max(this.maxScale, this.scale * 2);
+    } else {
+      this.scale = Math.min((viewW - pad * 2) / this.worldW, (viewH - pad * 2) / this.worldH);
+      this.minScale = Math.min(this.scale * 0.8, 16);
+    }
     this.x = -(viewW / this.scale - this.worldW) / 2;
     this.y = -(viewH / this.scale - this.worldH) / 2;
+  }
+
+  /** The smallest scale at which the map covers the whole view. */
+  private coverScale(viewW: number, viewH: number) {
+    return Math.max(viewW / this.worldW, viewH / this.worldH);
   }
 
   /** Zoom by `factor`, keeping the world point under (sx, sy) where it is. */
@@ -45,8 +61,18 @@ export class Camera {
     this.y -= dyScreen / this.scale;
   }
 
-  /** Keep at least part of the map on screen. */
+  /** Keep at least part of the map on screen (all of the screen covered, when filling). */
   clamp(viewW: number, viewH: number) {
+    if (this.fill) {
+      const cover = this.coverScale(viewW, viewH);
+      this.minScale = cover;
+      if (this.scale < cover) this.scale = cover;
+      const visW = viewW / this.scale;
+      const visH = viewH / this.scale;
+      this.x = Math.min(this.worldW - visW, Math.max(0, this.x));
+      this.y = Math.min(this.worldH - visH, Math.max(0, this.y));
+      return;
+    }
     const margin = 2;
     const visW = viewW / this.scale;
     const visH = viewH / this.scale;

@@ -9,22 +9,42 @@
 // UNITS and RULES are therefore the *active* tuning: plain objects whose
 // contents `withTuning` swaps for the duration of a synchronous rules call.
 import rulesFile from "../../tuning/rules.json" with { type: "json" };
-import breacher from "../../tuning/units/breacher.json" with { type: "json" };
 import commando from "../../tuning/units/commando.json" with { type: "json" };
 import engineer from "../../tuning/units/engineer.json" with { type: "json" };
+import healer from "../../tuning/units/healer.json" with { type: "json" };
 import heavy from "../../tuning/units/heavy.json" with { type: "json" };
+import officer from "../../tuning/units/officer.json" with { type: "json" };
 import rifleman from "../../tuning/units/rifleman.json" with { type: "json" };
 import riot from "../../tuning/units/riot.json" with { type: "json" };
 import scout from "../../tuning/units/scout.json" with { type: "json" };
+import shotgun from "../../tuning/units/shotgun.json" with { type: "json" };
 import sniper from "../../tuning/units/sniper.json" with { type: "json" };
 import type { UnitKind } from "./types.js";
 
-export const TRAITS = ["engineer", "medic", "armoured", "shield", "stealth", "backstab", "steady", "closeQuarters"] as const;
+export const TRAITS = [
+  "unarmed",
+  "engineer",
+  "medic",
+  "command",
+  "shield",
+  "stealth",
+  "backstab",
+  "steady",
+  "scoped",
+  "closeQuarters",
+  "spread",
+  "explosive",
+  "armoured",
+] as const;
 /**
- * engineer: can capture income sites. medic: neighbouring allies heal extra.
- * armoured: takes less damage. shield: takes much less from the front.
- * stealth: only seen up close. backstab: shots in the back hit far harder.
- * steady: accuracy drops if it moved, and up close. closeQuarters: ignores cover up close.
+ * unarmed: cannot shoot. engineer: can capture income sites. medic: allies
+ * nearby heal extra. command: allies nearby shoot better. shield: very hard
+ * to hit from the front. stealth: only seen up close. backstab: shots in the
+ * back hit far harder, and kill outright from next to the target. steady:
+ * accuracy drops if it moved. scoped: accuracy drops the closer the target,
+ * and it sees a long narrow strip ahead. closeQuarters: ignores cover up
+ * close. spread: damage falls away with distance. explosive: hurts everything
+ * next to the target too. armoured: takes less damage.
  */
 export type Trait = (typeof TRAITS)[number];
 
@@ -48,6 +68,8 @@ export interface UnitStats {
   damage: number;
   /** Width of the firing arc in degrees, centred on its facing. */
   arc: number;
+  /** Shots it can take in its attack turn (the commando takes two). */
+  shots: number;
   traits: Trait[];
 }
 
@@ -56,23 +78,34 @@ export interface RulesTuning {
   baseIncome: number;
   healPerRound: number;
   medicHeal: number;
+  medicRange: number;
   critChance: number;
   critMultiplier: number;
+  damageVariance: number;
   roundLimit: number;
   siteSight: number;
   minHitChance: number;
   maxHitChance: number;
   coverFactor: number;
   obstructionFactor: number;
+  longRangeAccuracy: number;
   flank: { front: number; side: number; rear: number };
   traits: {
-    armouredDamage: number;
-    shieldFrontDamage: number;
+    shieldFrontHit: number;
     backstabMultiplier: number;
+    backstabFatalRange: number;
     stealthRange: number;
     steadyPenalty: number;
-    steadyMinRange: number;
+    scopedCloseAccuracy: number;
+    scopeSight: number;
+    scopeArc: number;
     closeQuartersRange: number;
+    spreadFarDamage: number;
+    splashDamage: number;
+    commandRange: number;
+    commandAccuracy: number;
+    commandDamage: number;
+    armouredDamage: number;
   };
 }
 
@@ -81,7 +114,19 @@ export interface Tuning {
   units: Record<UnitKind, UnitStats>;
 }
 
-export const UNIT_KINDS: readonly UnitKind[] = ["rifleman", "scout", "engineer", "heavy", "sniper", "riot", "commando", "breacher"];
+/** The shop's order, which is also the number keys' (1..9, then 0). */
+export const UNIT_KINDS: readonly UnitKind[] = [
+  "rifleman",
+  "engineer",
+  "scout",
+  "shotgun",
+  "riot",
+  "sniper",
+  "commando",
+  "heavy",
+  "healer",
+  "officer",
+];
 
 export class TuningError extends Error {}
 
@@ -98,6 +143,7 @@ const UNIT_NUMBERS: NumberRule[] = [
   ["accuracy", 0, 100],
   ["damage", 0, 10_000],
   ["arc", 1, 360],
+  ["shots", 1, 10, true],
 ];
 
 const RULE_NUMBERS: NumberRule[] = [
@@ -105,14 +151,17 @@ const RULE_NUMBERS: NumberRule[] = [
   ["baseIncome", 0, 100_000, true],
   ["healPerRound", 0, 10_000],
   ["medicHeal", 0, 10_000],
+  ["medicRange", 0, 40],
   ["critChance", 0, 1],
   ["critMultiplier", 0, 100],
+  ["damageVariance", 0, 1],
   ["roundLimit", 1, 1000, true],
   ["siteSight", 0, 40],
   ["minHitChance", 0, 100],
   ["maxHitChance", 0, 100],
   ["coverFactor", 0, 10],
   ["obstructionFactor", 0, 10],
+  ["longRangeAccuracy", 0, 1],
 ];
 const FLANK_NUMBERS: NumberRule[] = [
   ["front", 0, 100],
@@ -120,13 +169,21 @@ const FLANK_NUMBERS: NumberRule[] = [
   ["rear", 0, 100],
 ];
 const TRAIT_NUMBERS: NumberRule[] = [
-  ["armouredDamage", 0, 10],
-  ["shieldFrontDamage", 0, 10],
+  ["shieldFrontHit", 0, 1],
   ["backstabMultiplier", 0, 100],
+  ["backstabFatalRange", 0, 40],
   ["stealthRange", 0, 40],
   ["steadyPenalty", 0, 10],
-  ["steadyMinRange", 0, 40],
+  ["scopedCloseAccuracy", 0, 1],
+  ["scopeSight", 0, 60],
+  ["scopeArc", 0, 360],
   ["closeQuartersRange", 0, 40],
+  ["spreadFarDamage", 0, 10],
+  ["splashDamage", 0, 10],
+  ["commandRange", 0, 40],
+  ["commandAccuracy", 0, 10],
+  ["commandDamage", 0, 10],
+  ["armouredDamage", 0, 10],
 ];
 
 function checkNumbers(file: string, obj: Record<string, unknown>, rules: NumberRule[], prefix = "") {
@@ -152,7 +209,7 @@ function checkUnit(kind: UnitKind, raw: unknown): UnitStats {
   }
   checkNumbers(file, raw, UNIT_NUMBERS);
   if ((raw.optimal as number) > (raw.range as number)) throw new TuningError(`${file}: "optimal" (${raw.optimal}) can't be more than "range" (${raw.range}).`);
-  if (!Array.isArray(raw.traits)) throw new TuningError(`${file}: "traits" must be a list, like ["armoured"] or [].`);
+  if (!Array.isArray(raw.traits)) throw new TuningError(`${file}: "traits" must be a list, like ["stealth"] or [].`);
   for (const t of raw.traits) {
     if (!TRAITS.includes(t as Trait)) throw new TuningError(`${file}: unknown trait ${JSON.stringify(t)}. Known traits: ${TRAITS.join(", ")}.`);
   }
@@ -178,6 +235,13 @@ function checkRules(raw: unknown): RulesTuning {
   return structuredClone(raw) as unknown as RulesTuning;
 }
 
+/**
+ * The tuning format's version, stored in every game's snapshot. Version 2
+ * brought ten classes (the breacher became the shotgun) and facings in
+ * degrees rather than eighths; snapshots without a version are older.
+ */
+export const TUNING_VERSION = 2;
+
 /** Validate tuning data (from the files, or a game's stored snapshot). Throws TuningError naming the file and field. */
 export function checkTuning(raw: { rules: unknown; units: Record<string, unknown> }): Tuning {
   const units = {} as Record<UnitKind, UnitStats>;
@@ -191,8 +255,38 @@ export function checkTuning(raw: { rules: unknown; units: Record<string, unknown
 /** The tuning in the files right now. New games are created under it. */
 export const FILE_TUNING: Tuning = checkTuning({
   rules: rulesFile,
-  units: { rifleman, scout, engineer, heavy, sniper, riot, commando, breacher },
+  units: { rifleman, engineer, scout, shotgun, riot, sniper, commando, heavy, healer, officer },
 });
+
+/**
+ * A stored snapshot, brought up to the current format. A game from before
+ * version 2 keeps the numbers it had where they still mean something; classes,
+ * fields and traits it never had come from the files, and fields that no
+ * longer exist are dropped.
+ */
+export function upgradeSnapshot(raw: { version?: number; rules: unknown; units: Record<string, unknown> }): Tuning {
+  if (raw.version === TUNING_VERSION) return checkTuning(raw);
+  const pick = <T extends object>(fresh: T, old: unknown): T => {
+    const out = { ...fresh } as Record<string, unknown>;
+    if (isObject(old)) {
+      for (const k of Object.keys(out)) if (typeof old[k] === "number" && typeof out[k] === "number") out[k] = old[k];
+    }
+    return out as T;
+  };
+  const oldUnits: Record<string, unknown> = { ...raw.units, shotgun: raw.units.shotgun ?? raw.units.breacher };
+  const units = {} as Record<UnitKind, UnitStats>;
+  for (const kind of UNIT_KINDS) {
+    const u = pick(FILE_TUNING.units[kind], oldUnits[kind]);
+    units[kind] = { ...u, kind, traits: [...FILE_TUNING.units[kind].traits] };
+  }
+  const oldRules = isObject(raw.rules) ? raw.rules : {};
+  const rules: RulesTuning = {
+    ...pick(FILE_TUNING.rules, oldRules),
+    flank: pick(FILE_TUNING.rules.flank, oldRules.flank),
+    traits: pick(FILE_TUNING.rules.traits, oldRules.traits),
+  };
+  return checkTuning({ rules, units: units as unknown as Record<string, unknown> });
+}
 
 /** The active tuning, read by every rule. Swapped by withTuning, never reassigned. */
 export const UNITS: Record<UnitKind, UnitStats> = structuredClone(FILE_TUNING.units);

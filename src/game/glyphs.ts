@@ -12,7 +12,9 @@ export const UNIT_GLYPH: Record<UnitKind, string> = {
   sniper: "M12 5a7 7 0 1 1 0 14 7 7 0 0 1 0-14zM12 2v6M12 16v6M2 12h6M16 12h6",
   riot: "M12 3l7 2.8V11c0 4.8-3 8.2-7 10-4-1.8-7-5.2-7-10V5.8zM12 7v10",
   commando: "M4.5 19.5l9.5-9.5M14 10l2-6 4 4-6 2M4.5 19.5l2.5.5-.5-2.5",
-  breacher: "M12 3v5M12 16v5M3 12h5M16 12h5M6 6l3.2 3.2M14.8 14.8L18 18M18 6l-3.2 3.2M9.2 14.8L6 18",
+  shotgun: "M12 3v5M12 16v5M3 12h5M16 12h5M6 6l3.2 3.2M14.8 14.8L18 18M18 6l-3.2 3.2M9.2 14.8L6 18",
+  healer: "M12 19.5s-7.5-4.6-7.5-10a4 4 0 0 1 7.5-2 4 4 0 0 1 7.5 2c0 5.4-7.5 10-7.5 10z",
+  officer: "M12 3.5l2.5 5.3 5.8.7-4.3 4 1.1 5.8L12 16.5l-5.1 2.8 1.1-5.8-4.3-4 5.8-.7z",
 };
 
 export function glyphSvg(kind: UnitKind, cls = "glyph"): string {
@@ -55,7 +57,7 @@ export const UNIT_SHAPE: Record<UnitKind, readonly (readonly [number, number])[]
     [0, 0.42],
     [-0.94, 0.88],
   ],
-  breacher: [
+  shotgun: [
     [-0.62, -0.88],
     [0.62, -0.88],
     [0.88, -0.62],
@@ -65,6 +67,21 @@ export const UNIT_SHAPE: Record<UnitKind, readonly (readonly [number, number])[]
     [-0.88, 0.62],
     [-0.88, -0.62],
   ],
+  healer: [
+    [-0.34, -1],
+    [0.34, -1],
+    [0.34, -0.34],
+    [1, -0.34],
+    [1, 0.34],
+    [0.34, 0.34],
+    [0.34, 1],
+    [-0.34, 1],
+    [-0.34, 0.34],
+    [-1, 0.34],
+    [-1, -0.34],
+    [-0.34, -0.34],
+  ],
+  officer: star(5, 1.18, 0.62),
 };
 
 /** Token size relative to a rifleman: big units look big. */
@@ -76,7 +93,9 @@ export const UNIT_SIZE: Record<UnitKind, number> = {
   sniper: 0.95,
   riot: 1.1,
   commando: 0.9,
-  breacher: 1.02,
+  shotgun: 1.02,
+  healer: 0.95,
+  officer: 1.02,
 };
 
 /** How far the shape reaches forward, as a multiple of its radius (where the facing arrow starts). */
@@ -89,6 +108,14 @@ function polygon(n: number, r: number, offset: number): [number, number][] {
   return Array.from({ length: n }, (_, i) => {
     const a = offset + (i / n) * Math.PI * 2 - Math.PI / 2;
     return [Math.cos(a) * r, Math.sin(a) * r];
+  });
+}
+
+function star(points: number, outer: number, inner: number): [number, number][] {
+  return Array.from({ length: points * 2 }, (_, i) => {
+    const a = (i / (points * 2)) * Math.PI * 2 - Math.PI / 2;
+    const r = i % 2 ? inner : outer;
+    return [Math.cos(a) * r, Math.sin(a) * r] as [number, number];
   });
 }
 

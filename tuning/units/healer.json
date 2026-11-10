@@ -1,0 +1,15 @@
+{
+  "name": "Healer",
+  "role": "Heals units within 2 tiles every round. Carries a pistol.",
+  "cost": 100,
+  "hp": 80,
+  "move": 5,
+  "sight": 8,
+  "range": 5,
+  "optimal": 3,
+  "accuracy": 70,
+  "damage": 15,
+  "arc": 120,
+  "shots": 1,
+  "traits": ["medic"]
+}

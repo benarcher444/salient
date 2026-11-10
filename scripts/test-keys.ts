@@ -47,7 +47,7 @@ async function cursorTo(page: Page, to: P) {
   for (let i = 0; i < Math.abs(dy); i++) await page.keyboard.press(dy > 0 ? "ArrowDown" : "ArrowUp");
 }
 
-const gold = async (page: Page) => Number(((await page.textContent("#gold")) ?? "").replace(/\D/g, ""));
+const gold = async (page: Page) => Number(((await page.textContent("#gold strong")) ?? "").replace(/\D/g, ""));
 
 const context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
 const page = await context.newPage();
@@ -84,17 +84,21 @@ await page.keyboard.press("1");
 check("1 deploys a rifleman on the cursor's tile", before - (await gold(page)) === 100, `${before} -> ${await gold(page)}`);
 const sheet = await page.textContent("#panel");
 check("and selects it", sheet?.includes("Deploying") ?? false);
+const degrees = async () => Number(/\((\d+)°\)/.exec((await page.textContent("#panel")) ?? "")?.[1]);
+const facing0 = await degrees();
 await page.keyboard.press("e");
-check("E turns it", (await page.locator('.compass button[aria-pressed="true"]').getAttribute("aria-label"))?.startsWith("Face") ?? false);
+check("E turns it 15°", (await degrees()) === (facing0 + 15) % 360, `${facing0} -> ${await degrees()}`);
+await page.keyboard.press("Shift+Q");
+check("Shift+Q turns it back 45°", (await degrees()) === (facing0 + 15 - 45 + 360) % 360, `${await degrees()}`);
 await cursorTo(page, spawns[1]!);
 await page.keyboard.press("2");
-check("2 deploys a scout on another tile", before - (await gold(page)) === 170, String(await gold(page)));
+check("2 deploys an engineer on another tile", before - (await gold(page)) === 180, String(await gold(page)));
 await cursorTo(page, spawns[0]!);
 await page.keyboard.press("2");
 check("a taken tile is refused, with a reason", (await page.textContent("#banner"))?.includes("free tile") ?? false);
 await cursorTo(page, spawns[2]!);
 await page.keyboard.press("Enter");
-check("Enter on a free base tile opens the shop, numbered 1-8", (await page.locator(".shop-item .key-hint:visible").count()) === 8, String(await page.locator(".shop-item .key-hint:visible").count()));
+check("Enter on a free base tile opens the shop, numbered 1-9 and 0", (await page.locator(".shop-item .key-hint:visible").count()) === 10, String(await page.locator(".shop-item .key-hint:visible").count()));
 await page.screenshot({ path: "screenshots/keys-shop.png" });
 await page.keyboard.press("Escape");
 

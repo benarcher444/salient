@@ -40,10 +40,10 @@ if (!hasGame) {
     orders: {
       moves: [],
       spawns: [
-        { kind: "rifleman", ...b0[0]!, facing: 2 },
-        { kind: "engineer", ...b0[1]!, facing: 2 },
+        { kind: "rifleman", ...b0[0]!, facing: 90 },
+        { kind: "engineer", ...b0[1]!, facing: 90 },
         // On the road row, so its route east below is clear.
-        { kind: "scout", ...b0[3]!, facing: 2 },
+        { kind: "scout", ...b0[3]!, facing: 90 },
       ],
     },
   });
@@ -52,8 +52,8 @@ if (!hasGame) {
     orders: {
       moves: [],
       spawns: [
-        { kind: "heavy", ...b1[2]!, facing: 6 },
-        { kind: "rifleman", ...b1[0]!, facing: 6 },
+        { kind: "heavy", ...b1[2]!, facing: 270 },
+        { kind: "rifleman", ...b1[0]!, facing: 270 },
       ],
     },
   });
@@ -63,11 +63,11 @@ if (!hasGame) {
   const path = (from: { x: number; y: number }, steps: [number, number][]) => steps.map(([dx, dy]) => ({ x: from.x + dx, y: from.y + dy }));
   act(id, alex, {
     type: "orders",
-    orders: { moves: [{ unitId: scout.id, path: path(scout, [[1, 0], [2, 0], [3, 0], [4, 0]]), facing: 2 }], spawns: [] },
+    orders: { moves: [{ unitId: scout.id, path: path(scout, [[1, 0], [2, 0], [3, 0], [4, 0]]), facing: 90 }], spawns: [] },
   });
   act(id, sam, {
     type: "orders",
-    orders: { moves: [{ unitId: heavy.id, path: path(heavy, [[-1, 0], [-2, 0]]), facing: 6 }], spawns: [] },
+    orders: { moves: [{ unitId: heavy.id, path: path(heavy, [[-1, 0], [-2, 0]]), facing: 270 }], spawns: [] },
   });
   const after = loadGame(id)!.state!;
   console.log(`  added game #${id} (round ${after.round}, ${after.phase})`);

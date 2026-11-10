@@ -173,12 +173,13 @@ export function rulesPage(user: User | null): Html {
     <ol class="steps">
       <li><strong>Plan.</strong> Everyone plans at the same time, in secret. Buy units onto any base tile or command post you hold, and give each unit a route and a facing. Lock in when ready.</li>
       <li><strong>Move.</strong> When the last player locks in, all routes play out together, one step at a time. Two units heading for the same tile both stop; so does anyone who walks into a unit they couldn't see.</li>
-      <li><strong>Attack.</strong> Players take turns firing one unit at a time. The first shot rotates each round. Units with nothing in reach are skipped automatically.</li>
+      <li><strong>Attack.</strong> Players take turns firing one unit at a time (a commando takes both its shots in its turn). The first shot rotates each round. Units with nothing in reach are skipped automatically.</li>
       <li><strong>Upkeep.</strong> Captures (base tiles, posts, income sites), income and healing. Anyone left with no base tiles and no units is knocked out.</li>
     </ol>
     <h2>Shooting</h2>
     <p>A unit can shoot what is inside its <strong>firing arc</strong> (the wedge in front of it), within range, with a clear line. You see the chance to hit before you fire. Accuracy falls off past a unit's best range. A target behind cover — a crate, a low wall or window, or standing in woods — is harder to hit; cover right next to the shooter costs nothing.</p>
-    <p><strong>Facing matters.</strong> Shots into a unit's side do ${RULES.flank.side}× damage and into its back ${RULES.flank.rear}×. ${Math.round(RULES.critChance * 100)} per cent of hits are critical, for ${RULES.critMultiplier}× more.</p>
+    <p>Before you fire you see the chance to hit and the damage a hit will do: damage varies by up to ${Math.round(RULES.damageVariance * 100)} per cent either way. ${Math.round(RULES.critChance * 100)} per cent of hits are critical, for ${RULES.critMultiplier}× more.</p>
+    <p><strong>Facing matters.</strong> A unit can face any direction. Shots into its side do ${RULES.flank.side}× damage and into its back ${RULES.flank.rear}×. To aim a unit, click where it should move and it turns to follow the pointer until you click again; or tap its ghost (or a deployment) to aim it, use the compass in the panel, or Q and E.</p>
     <h2>The map</h2>
     <ul>
       <li><strong>Walls</strong> stop movement and sight. <strong>Windows and low walls</strong> stop movement but you can see and shoot through them. Doorways are open.</li>
@@ -189,7 +190,7 @@ export function rulesPage(user: User | null): Html {
       <li><strong>Fog of war:</strong> you only see what your units and the base tiles and posts you hold can see.</li>
     </ul>
     <h2>Reading the board</h2>
-    <p>Each class has its own shape, and the white arrow in front of a unit shows which way it faces. Point at any unit, yours or an enemy's, to see its firing arc.</p>
+    <p>Each class has its own shape, and the white arrow in front of a unit shows which way it faces. Point at any unit, yours or an enemy's, to see its firing arc. A sniper with a tripod badge is braced: it hasn't moved this round, so it shoots at full accuracy. A healer or officer shows the square its help reaches when you point at it.</p>
     <h2>Keyboard</h2>
     <p>The whole game can be played from the keyboard. A cursor square is always on the map; keys act on it. Press <kbd>?</kbd> during a game for this list.</p>
     ${keyHelpHtml()}

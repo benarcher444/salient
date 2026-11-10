@@ -6,7 +6,7 @@ import type { UnitKind } from "./game/types.js";
 
 const coord = z.number().int().min(0).max(255);
 const point = z.object({ x: coord, y: coord });
-const facing = z.number().int().min(0).max(7);
+const facing = z.number().int().min(0).max(359);
 const id = z.number().int().positive();
 
 const orders = z.object({

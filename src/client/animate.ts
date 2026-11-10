@@ -3,7 +3,7 @@
 // drawn at any moment while the update plays out: moves first (everyone at
 // once, step by step, the way the rules resolve them), then each shot in turn.
 import { facingAngle } from "../game/grid.js";
-import { UNITS } from "../game/units.js";
+import { UNITS, hasTrait } from "../game/units.js";
 import type { GameEvent, Point, Unit } from "../game/types.js";
 import type { PlayerView } from "../game/view.js";
 
@@ -29,6 +29,8 @@ export interface Tracer {
   hit: boolean;
   crit: boolean;
   seat: number;
+  /** An explosive shell: it lands on the target's tile even when it misses, and bursts. */
+  blast: boolean;
 }
 
 export interface Floater {
@@ -82,7 +84,12 @@ export class Animator {
 
     // Units that came into view fade in as the moves finish; ones that left
     // view (and were not shot) fade out where they were last seen.
-    const killed = new Set(events.filter((e) => e.type === "shot" && e.killed).map((e) => (e as { targetId: number }).targetId));
+    const killed = new Set<number>();
+    for (const e of events) {
+      if (e.type !== "shot") continue;
+      if (e.killed) killed.add(e.targetId);
+      for (const x of e.splash) if (x.killed) killed.add(x.unitId);
+    }
     for (const u of after.units) if (!oldUnits.has(u.id)) this.appear.set(u.id, events.some((e) => e.type === "spawn" && e.unit.id === u.id) ? t : moveEnd);
     for (const old of before.units) {
       if (!newIds.has(old.id) && !killed.has(old.id)) this.ghosts.push({ unit: old, start: t, end: t + 500, dies: false });
@@ -92,10 +99,20 @@ export class Animator {
     t = Math.max(moveEnd, t) + (longest > 0 ? 150 : 0);
     for (const e of events) {
       if (e.type !== "shot") continue;
-      this.tracers.push({ from: e.from, to: e.to, start: t, hit: e.hit, crit: e.crit, seat: e.shooterSeat });
+      const shooter = oldUnits.get(e.shooterId);
+      const blast = e.splash.length > 0 || (!!shooter && hasTrait(shooter.kind, "explosive"));
+      this.tracers.push({ from: e.from, to: e.to, start: t, hit: e.hit, crit: e.crit, seat: e.shooterSeat, blast });
       const impact = t + 260;
       const label = !e.hit ? "Miss" : e.crit ? `Crit −${e.damage}` : `−${e.damage}`;
-      this.floaters.push({ at: e.to, text: label, tone: !e.hit ? "miss" : e.crit ? "crit" : "hit", start: impact });
+      const self = e.splash.find((x) => x.unitId === e.targetId);
+      this.floaters.push({ at: e.to, text: self ? `Blast −${self.damage}` : label, tone: !e.hit && !self ? "miss" : e.crit ? "crit" : "hit", start: impact });
+      for (const x of e.splash) {
+        const victim = oldUnits.get(x.unitId);
+        if (x.unitId !== e.targetId) this.floaters.push({ at: x.at, text: `−${x.damage}`, tone: "hit", start: impact + 80 });
+        if (!victim) continue;
+        if (x.unitId !== e.targetId) this.hpUntil.set(x.unitId, { hp: victim.hp, until: impact });
+        if (x.killed) this.ghosts.push({ unit: victim, start: impact, end: impact + 700, dies: true });
+      }
       const old = oldUnits.get(e.targetId);
       if (old) {
         this.hpUntil.set(e.targetId, { hp: old.hp, until: impact });

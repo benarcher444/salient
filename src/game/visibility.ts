@@ -1,6 +1,6 @@
 // Fog of war and spawn points: what each seat can see, and where it can deploy.
 import { RULES } from "./constants.js";
-import { distance } from "./grid.js";
+import { distance, facingAngle } from "./grid.js";
 import { traceLine, visibleFrom } from "./los.js";
 import { UNITS, hasTrait, stealthRange } from "./units.js";
 import type { GameState, MapDef, Point, Seat, Unit } from "./types.js";
@@ -26,7 +26,12 @@ export const baseTilesOwned = (state: Pick<GameState, "baseOwners">, seat: Seat)
 export function visibleTiles(map: MapDef, state: GameState, seat: Seat): Set<number> {
   const seen = new Set<number>();
   for (const u of state.units) {
-    if (u.seat === seat) visibleFrom(map, u, UNITS[u.kind].sight, seen);
+    if (u.seat !== seat) continue;
+    visibleFrom(map, u, UNITS[u.kind].sight, seen);
+    // A scope sees a long, narrow strip straight ahead.
+    if (hasTrait(u.kind, "scoped")) {
+      visibleFrom(map, u, RULES.traits.scopeSight, seen, { heading: facingAngle(u.facing), halfArc: RULES.traits.scopeArc / 2 });
+    }
   }
   baseTiles(map, state.seatCount).forEach((p, i) => {
     if (state.baseOwners[i] === seat) visibleFrom(map, p, RULES.siteSight, seen);
@@ -56,8 +61,7 @@ export type SpawnState = Pick<GameState, "postOwners" | "baseOwners" | "seatCoun
 
 /**
  * Tiles where the seat may deploy: every base tile it owns (its own or one
- * taken from an enemy), and each command post it holds plus the open tiles
- * beside it.
+ * taken from an enemy), and the tile of each command post it holds.
  */
 export function spawnTiles(map: MapDef, state: SpawnState, seat: Seat): Point[] {
   const tiles: Point[] = [];

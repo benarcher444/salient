@@ -1,14 +1,15 @@
 {
   "name": "Engineer",
-  "role": "Captures income sites and patches up neighbours.",
-  "cost": 90,
+  "role": "Unarmed. The only unit that can take income sites.",
+  "cost": 80,
   "hp": 90,
   "move": 5,
   "sight": 7,
-  "range": 5,
-  "optimal": 3,
-  "accuracy": 65,
-  "damage": 20,
+  "range": 0,
+  "optimal": 0,
+  "accuracy": 0,
+  "damage": 0,
   "arc": 120,
-  "traits": ["engineer", "medic"]
+  "shots": 1,
+  "traits": ["engineer", "unarmed"]
 }

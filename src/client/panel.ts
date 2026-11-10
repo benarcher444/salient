@@ -1,11 +1,12 @@
 // The side panel (a bottom sheet on a phone) and the top bar: plain HTML,
 // re-rendered whenever the state or selection changes. Buttons carry a
 // data-action that game.ts handles in one delegated listener.
-import { BLOCK_TEXT, previewShot, type ShotPreview } from "../game/combat.js";
-import { FACING_NAME } from "../game/grid.js";
+import { BLOCK_TEXT, damageRange, isArmed, previewShot, type ShotPreview } from "../game/combat.js";
+import { RULES } from "../game/constants.js";
+import { FACING_NAME, facingName } from "../game/grid.js";
 import { unitBadgeSvg } from "../game/glyphs.js";
 import { seatName } from "../game/seats.js";
-import { TRAIT_TEXT, UNITS, UNIT_KINDS } from "../game/units.js";
+import { TRAIT_TEXT, UNITS, UNIT_KINDS, hasTrait } from "../game/units.js";
 import type { Facing, Unit, UnitKind } from "../game/types.js";
 import {
   canPlan,
@@ -64,8 +65,24 @@ export function renderTopBar(s: ClientState) {
   if (v.seat !== null && v.phase !== "over") {
     gold.hidden = false;
     const left = canPlan(s) ? goldLeft(s) : v.gold;
-    gold.innerHTML = `<span class="coin"></span><strong>${left}</strong><span class="faint">gold</span>`;
+    const income = incomePerRound(s);
+    const label = `${left} gold; +${income} at the end of every round (${RULES.baseIncome} base${income > RULES.baseIncome ? `, ${income - RULES.baseIncome} from income sites` : ""})`;
+    gold.title = label;
+    gold.setAttribute("aria-label", label);
+    gold.innerHTML = `<span class="coin"></span><strong>${left}</strong><span class="faint">gold</span><span class="income-chip">+${income}<span class="faint">/round</span></span>`;
   } else gold.hidden = true;
+}
+
+/** Gold this player gets at the end of each round: the base amount plus its income sites. */
+function incomePerRound(s: ClientState): number {
+  const v = s.view!;
+  return s.map.income.reduce((total, site, i) => total + (v.incomeOwners[i] === v.seat ? site.value : 0), RULES.baseIncome);
+}
+
+/** "72% · 27–33", or "72% · kills" for a fatal backstab: what a shot is expected to do. */
+function shotSummary(p: ShotPreview): string {
+  const [lo, hi] = damageRange(p);
+  return `${Math.round(p.chance * 100)}% · ${p.fatal ? "kills" : lo === hi ? `${lo}` : `${lo}–${hi}`}`;
 }
 
 /**
@@ -130,7 +147,11 @@ function statusBlock(s: ClientState): string {
       sub = waiting.length ? `Waiting for ${waiting.join(", ")}.` : "Resolving…";
     }
   } else {
-    if (isMyAttackTurn(s)) {
+    if (isMyAttackTurn(s) && v.burst) {
+      const u = unitById(s, v.burst.unitId);
+      title = "Another shot";
+      sub = `Your ${u ? esc(UNITS[u.kind].name.toLowerCase()) : "unit"} can fire again: pick a target, or hold.`;
+    } else if (isMyAttackTurn(s)) {
       title = "Your shot";
       sub = "Pick a glowing unit, then a target. One unit fires per turn.";
     } else {
@@ -158,9 +179,9 @@ function planningBlock(s: ClientState): string {
       const what = order?.path.length ? `Moving ${order.path.length} step${order.path.length === 1 ? "" : "s"}` : order ? "Turning on the spot" : "Holding position";
       parts.push(`<div class="panel-section unit-sheet" ${seatStyle(u.seat)}>
   ${unitHeader(s, u)}
-  <p class="order-line">${what}, facing ${FACING_NAME[facing]}.</p>
-  <div class="facing-row"><span class="faint small">Face</span>${compass("set-facing", facing)}</div>
-  <p class="faint small">Tap a highlighted tile to move there. Tap the unit again to deselect.</p>
+  <p class="order-line">${what}, facing ${facingName(facing)} (${facing}°).</p>
+  <div class="facing-row"><span class="faint small">Face</span>${compass(s, facing)}</div>
+  <p class="faint small">${s.aiming ? "Aiming: tap where it should face." : "Tap a highlighted tile to move there, then its ghost to aim. Tap the unit again to deselect."}</p>
   ${order ? `<button class="btn btn-ghost btn-sm" data-action="clear-order" data-unit="${u.id}" type="button">Clear order</button>` : ""}
 </div>`);
     }
@@ -170,7 +191,7 @@ function planningBlock(s: ClientState): string {
       const u = UNITS[k];
       const can = u.cost <= left;
       return `<button class="shop-item" type="button" data-action="buy" data-kind="${k}"${can ? "" : " disabled"} title="${esc(u.role)}">
-  <span class="unit-badge" ${seatStyle(v.seat!)}>${glyph(k)}</span><span class="shop-name">${esc(u.name)}</span><span class="shop-cost">${u.cost}g</span>${kbd(i + 1)}
+  <span class="unit-badge" ${seatStyle(v.seat!)}>${glyph(k)}</span><span class="shop-name">${esc(u.name)}</span><span class="shop-cost">${u.cost}g</span>${kbd((i + 1) % 10)}
 </button>`;
     }).join("")}</div><p class="faint small">${left} gold left this round.</p></div>`);
   } else if (sel?.type === "spawn") {
@@ -179,7 +200,8 @@ function planningBlock(s: ClientState): string {
       parts.push(`<div class="panel-section unit-sheet" ${seatStyle(v.seat!)}>
   <div class="unit-head"><span class="unit-badge">${glyph(sp.kind)}</span><div><h3>${esc(UNITS[sp.kind].name)}</h3><p class="faint small">Deploying · ${UNITS[sp.kind].cost} gold</p></div></div>
   <p class="faint small">${esc(UNITS[sp.kind].role)}</p>
-  <div class="facing-row"><span class="faint small">Face</span>${compass("spawn-facing", sp.facing)}</div>
+  <div class="facing-row"><span class="faint small">Face</span>${compass(s, sp.facing)}</div>
+  <p class="faint small">${s.aiming ? "Aiming: tap where it should face." : `Facing ${facingName(sp.facing)} (${sp.facing}°). Tap it again to aim.`}</p>
   <button class="btn btn-ghost btn-sm" data-action="cancel-spawn" type="button">Cancel deployment</button>
 </div>`);
     }
@@ -215,19 +237,25 @@ function attackBlock(s: ClientState): string {
     const targets = acted ? [] : targetsOf(s, shooter);
     const target = sel?.type === "target" ? unitById(s, sel.targetId) : undefined;
     parts.push(`<div class="panel-section unit-sheet" ${seatStyle(shooter.seat)}>${unitHeader(s, shooter)}`);
+    const shots = UNITS[shooter.kind].shots;
+    const burst = v.burst?.unitId === shooter.id ? v.burst : null;
     if (acted) parts.push(`<p class="faint small">Already acted this round.</p>`);
-    else if (target) {
-      const p = previewShot(s.map, shooter, target);
-      parts.push(shotBreakdown(s, target, p));
-      parts.push(`<div class="btn-row"><button class="btn btn-danger btn-lg grow" data-action="fire" type="button"${s.pending ? " disabled" : ""}>Fire · ${Math.round(p.chance * 100)}%</button><button class="btn" data-action="untarget" type="button">Back</button></div>`);
-    } else if (targets.length) {
-      parts.push(`<h3 class="panel-h">Targets</h3><ul class="target-list">${targets
-        .map((t, i) => {
-          const p = previewShot(s.map, shooter, t);
-          return `<li><button class="target-item" type="button" data-action="target" data-target="${t.id}" ${seatStyle(t.seat)}><span class="unit-badge sm">${glyph(t.kind)}</span><span>${unitLabel(s, t)}<small class="faint">${t.hp} hp · ${p.flank}${p.inCover ? " · in cover" : ""}</small></span><strong>${Math.round(p.chance * 100)}%</strong>${kbd(i + 1)}</button></li>`;
-        })
-        .join("")}</ul>`);
-    } else parts.push(`<p class="faint small">Nothing this unit can hit from here.</p>`);
+    else if (!isArmed(shooter.kind)) parts.push(`<p class="faint small">Unarmed: this unit can't shoot.</p>`);
+    else {
+      if (shots > 1) parts.push(`<p class="faint small">Shot ${(burst?.fired ?? 0) + 1} of ${shots} this turn.</p>`);
+      if (target) {
+        const p = previewShot(s.map, shooter, target, v.units);
+        parts.push(shotBreakdown(s, target, p));
+        parts.push(`<div class="btn-row"><button class="btn btn-danger btn-lg grow" data-action="fire" type="button"${s.pending ? " disabled" : ""}>Fire · ${shotSummary(p)}</button><button class="btn" data-action="untarget" type="button">Back</button></div>`);
+      } else if (targets.length) {
+        parts.push(`<h3 class="panel-h">Targets</h3><ul class="target-list">${targets
+          .map((t, i) => {
+            const p = previewShot(s.map, shooter, t, v.units);
+            return `<li><button class="target-item" type="button" data-action="target" data-target="${t.id}" ${seatStyle(t.seat)}><span class="unit-badge sm">${glyph(t.kind)}</span><span>${unitLabel(s, t)}<small class="faint">${t.hp} hp · ${p.flank}${p.inCover ? " · in cover" : ""}</small></span><strong>${shotSummary(p)}</strong>${kbd((i + 1) % 10)}</button></li>`;
+          })
+          .join("")}</ul>`);
+      } else parts.push(`<p class="faint small">Nothing this unit can hit from here.</p>`);
+    }
     if (!acted) parts.push(`<button class="btn btn-ghost btn-sm" data-action="hold" data-unit="${shooter.id}" type="button">Hold fire with this unit</button>`);
     parts.push(`</div>`);
   } else {
@@ -242,12 +270,16 @@ function attackBlock(s: ClientState): string {
 
 function shotBreakdown(s: ClientState, target: Unit, p: ShotPreview): string {
   if (!p.possible) return `<p class="alert alert-danger small">${BLOCK_TEXT[p.block!]}</p>`;
+  const [lo, hi] = damageRange(p);
+  const dmg = p.fatal ? "Kills" : lo === hi ? `${lo}` : `${lo}–${hi}`;
   const rows = p.modifiers
     .map((m) => `<li><span>${esc(m.label)}</span><span>${m.factor === 1 ? "—" : `×${m.factor.toFixed(2)}`}</span></li>`)
     .join("");
   return `<div class="shot" ${seatStyle(target.seat)}>
   <div class="shot-head"><span class="unit-badge sm">${glyph(target.kind)}</span><span>${unitLabel(s, target)}<small class="faint">${target.hp} / ${UNITS[target.kind].hp} hp</small></span></div>
-  <dl class="shot-stats"><div><dt>Hit chance</dt><dd>${Math.round(p.chance * 100)}%</dd></div><div><dt>Damage</dt><dd>${p.damage}</dd></div><div><dt>Angle</dt><dd>${p.flank}</dd></div></dl>
+  <dl class="shot-stats"><div><dt>Hit chance</dt><dd>${Math.round(p.chance * 100)}%</dd></div><div><dt>Damage</dt><dd>${dmg}</dd></div><div><dt>Angle</dt><dd>${p.flank}</dd></div></dl>
+  ${p.fatal ? `<p class="small"><strong>From behind, this close: a hit kills outright.</strong></p>` : `<p class="faint small">A critical hit (${Math.round(RULES.critChance * 100)}% of hits) does ${RULES.critMultiplier}× damage.</p>`}
+  ${p.splash ? `<p class="small">Blast: ${p.splash} damage to every unit next to the target, yours too, and to the target on a miss.</p>` : ""}
   ${rows ? `<ul class="mods">${rows}</ul>` : `<p class="faint small">Clean shot: no modifiers.</p>`}
 </div>`;
 }
@@ -257,7 +289,8 @@ function unitHeader(s: ClientState, u: Unit): string {
   const f = u.hp / st.hp;
   return `<div class="unit-head"><span class="unit-badge">${glyph(u.kind)}</span><div class="grow"><h3>${esc(st.name)}</h3>
   <div class="hp-bar" role="img" aria-label="${u.hp} of ${st.hp} health"><span style="width:${Math.round(f * 100)}%" class="${f > 0.6 ? "ok" : f > 0.3 ? "warn" : "danger"}"></span></div>
-  <p class="faint small">${u.hp}/${st.hp} hp · move ${st.move} · range ${st.range} · aim ${st.accuracy}%</p></div></div>`;
+  <p class="faint small">${u.hp}/${st.hp} hp · move ${st.move} · ${isArmed(u.kind) ? `range ${st.range} · aim ${st.accuracy}%${st.shots > 1 ? ` · ${st.shots} shots` : ""}` : "unarmed"}</p>
+  ${hasTrait(u.kind, "steady") ? `<p class="small braced-note">${u.moved ? "Moved this round: not braced, half accuracy." : "Braced: full accuracy while it stays put."}</p>` : ""}</div></div>`;
 }
 
 function unitDetail(s: ClientState, u: Unit): string {
@@ -268,15 +301,16 @@ function unitDetail(s: ClientState, u: Unit): string {
 </div>`;
 }
 
-function compass(action: string, current: Facing): string {
-  // 3x3 grid, centre empty; cells in facing order around it.
-  const cells: (Facing | null)[] = [7, 0, 1, 6, null, 2, 5, 4, 3];
+/** Eight quick facings round an Aim button (aim: the unit follows the pointer until a tap). */
+function compass(s: ClientState, current: Facing): string {
+  // 3x3 grid; cells are eighths of a turn round the centre.
+  const cells: (number | null)[] = [7, 0, 1, 6, null, 2, 5, 4, 3];
   const arrows = ["↑", "↗", "→", "↘", "↓", "↙", "←", "↖"];
   return `<div class="compass" role="group" aria-label="Facing">${cells
     .map((f) =>
       f === null
-        ? `<span></span>`
-        : `<button type="button" data-action="${action}" data-facing="${f}" aria-pressed="${f === current}" aria-label="Face ${FACING_NAME[f]}">${arrows[f]}</button>`,
+        ? `<button type="button" class="aim" data-action="aim" aria-pressed="${!!s.aiming}" aria-label="Aim with the pointer" title="Aim: the unit follows the pointer until you tap">◎</button>`
+        : `<button type="button" data-action="set-facing" data-facing="${f * 45}" aria-pressed="${f * 45 === current}" aria-label="Face ${FACING_NAME[f]}">${arrows[f]}</button>`,
     )
     .join("")}</div>`;
 }

@@ -10,8 +10,11 @@
 //              tiles first, then enemy base tiles and posts, preferring tiles
 //              with cover, never two units to one tile; face the nearest enemy.
 //   Shooting:  the shot with the best expected damage, with a bonus for kills
-//              and a bigger one for enemies standing on its base.
-import { previewShot } from "./combat.js";
+//              and a bigger one for enemies standing on its base. A blast
+//              counts what it does to everyone it catches, its own side
+//              against it, and a shot that would hurt it more than the enemy
+//              is not taken.
+import { blastTiles, previewShot } from "./combat.js";
 import { DIRS, TERRAIN, distance, edgeAt, facingToward, inBounds, terrainAt } from "./grid.js";
 import { getMap } from "./maps.js";
 import { pathTo, reachable } from "./movement.js";
@@ -30,12 +33,14 @@ export type BotAction =
 /** Shopping weights once the essentials are covered. Riflemen are the backbone. */
 const MIX: [UnitKind, number][] = [
   ["rifleman", 5],
+  ["shotgun", 2],
   ["heavy", 2],
-  ["breacher", 2],
   ["sniper", 1],
-  ["riot", 1],
   ["commando", 1],
   ["scout", 1],
+  ["riot", 1],
+  ["healer", 1],
+  ["officer", 1],
 ];
 const MAX_DEPLOY_PER_ROUND = 4;
 
@@ -261,10 +266,20 @@ export function chooseShot(view: PlayerView): BotAction {
     const shooter = view.units.find((u) => u.id === id);
     if (!shooter) continue;
     for (const target of targetsFor(map, state, shooter)) {
-      const p = previewShot(map, shooter, target);
+      const p = previewShot(map, shooter, target, view.units);
       const kills = p.damage >= target.hp;
       const raiding = ownBase.some((b) => b.x === target.x && b.y === target.y);
-      const score = p.chance * p.damage * (kills ? 2 : 1) * (raiding ? 3 : 1);
+      let score = p.chance * p.damage * (kills ? 2 : 1) * (raiding ? 3 : 1);
+      if (p.splash > 0) {
+        for (const t of blastTiles(map, target)) {
+          const u = view.units.find((o) => o.x === t.x && o.y === t.y);
+          if (!u) continue;
+          // The target takes the blast only when the shell misses it.
+          const share = u === target ? 1 - p.chance : 1;
+          score += (u.seat === view.seat ? -1.5 : 1) * share * p.splash;
+        }
+      }
+      if (score <= 0) continue;
       if (!best || score > best.score) best = { unitId: shooter.id, targetId: target.id, score };
     }
   }

@@ -6,15 +6,16 @@
 export const KEY_HELP: readonly { keys: string[]; what: string }[] = [
   { keys: ["←", "↑", "→", "↓"], what: "Move the cursor (or W A S D). Hold Shift for 3 tiles." },
   { keys: ["Enter"], what: "Act on the cursor's tile, as a tap: select, move there, aim, fire." },
-  { keys: ["1", "–", "8"], what: "Deploy that unit on the base tile under the cursor (the shop's order)." },
-  { keys: ["Q", "E"], what: "Turn the selected unit or deployment left or right." },
+  { keys: ["1", "–", "9", "0"], what: "Deploy that unit on the base tile under the cursor (the shop's order; 0 is the tenth)." },
+  { keys: ["Q", "E"], what: "Turn the selected unit or deployment 15° left or right (with Shift, 45°)." },
+  { keys: ["R"], what: "Point the selected unit or deployment at the cursor." },
   { keys: ["Tab"], what: "Next unit of yours. In the attack phase, next unit that can fire." },
-  { keys: ["1", "–", "9"], what: "Attack phase: aim at that target in the list. T cycles targets." },
+  { keys: ["1", "–", "9"], what: "Attack phase: pick that target in the list. T cycles targets." },
   { keys: ["F"], what: "Fire at the chosen target. H holds fire with the unit." },
   { keys: ["Del"], what: "Clear the selected unit's order, or cancel a deployment." },
   { keys: ["Shift", "Enter"], what: "Lock in orders, or finish firing for the round." },
-  { keys: ["+", "−", "0"], what: "Zoom in, out, or fit the whole map." },
-  { keys: ["Esc"], what: "Deselect. ? shows or hides this list." },
+  { keys: ["+", "−", "Z"], what: "Zoom in, out, or back to the whole board." },
+  { keys: ["Esc"], what: "Stop aiming, or deselect. ? shows or hides this list." },
 ];
 
 export function keyHelpHtml(): string {

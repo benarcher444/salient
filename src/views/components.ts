@@ -81,7 +81,11 @@ export function unitCards(): Html {
     const stat = (label: string, value: string | number) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
     return `<article class="unit-card">
   <header><span class="unit-badge">${unitBadgeSvg(k)}</span><div><h3>${esc(u.name)}</h3><p class="faint">${esc(u.role)}</p></div><span class="cost">${u.cost}<small>g</small></span></header>
-  <dl class="stats">${stat("Health", u.hp)}${stat("Move", u.move)}${stat("Sight", u.sight)}${stat("Range", u.range)}${stat("Aim", `${u.accuracy}%`)}${stat("Damage", u.damage)}${stat("Arc", `${u.arc}°`)}</dl>
+  <dl class="stats">${stat("Health", u.hp)}${stat("Move", u.move)}${stat("Sight", u.sight)}${
+    u.traits.includes("unarmed")
+      ? stat("Weapon", "None")
+      : `${stat("Range", u.range)}${stat("Aim", `${u.accuracy}%`)}${stat("Damage", u.damage)}${stat("Arc", `${u.arc}°`)}${u.shots > 1 ? stat("Shots", u.shots) : ""}`
+  }</dl>
   ${u.traits.length ? `<ul class="traits">${u.traits.map((t) => `<li>${esc(TRAIT_TEXT[t])}</li>`).join("")}</ul>` : ""}
 </article>`;
   }).join("")}</div>`;

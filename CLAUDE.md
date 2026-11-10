@@ -109,13 +109,24 @@ from the session, never the message. The prototype sent every unit to every
 client, so its fog was cosmetic. An outsider can open a finished game, never
 one in progress (they would see through everyone's fog).
 
-**Tiles, eight facings, simultaneous moves, attacks in turn.** Chosen with the
+**Tiles, free facing, simultaneous moves, attacks in turn.** Chosen with the
 owner over the prototype's free movement. Moves resolve in lockstep, one step
 per tick: two units wanting one tile both stop, swaps are refused, and walking
 into an unseen enemy stops you facing it. The rule looks only at the current
 tick, so the result never depends on unit order. Attack turns go round the
 table one unit at a time; the first shooter rotates each round; a seat with
-nothing in reach is skipped automatically.
+nothing in reach is skipped automatically. A unit with more than one shot
+(the commando) keeps its side's turn for all of them (`state.burst`), and
+may switch targets between them.
+
+**A facing is any whole degree, 0..359** (0 north, clockwise). It was one of
+eight; the owner wanted to point anywhere. Whole degrees keep the action log
+exact. In the battle, clicking a route's end leaves the unit turning to
+follow the pointer until the next click (`s.aiming`, mouse only; Enter does
+not, or the keyboard would need a second press); tapping a ghost or a
+deployment aims it the same way; Q/E turn 15° (Shift 45°), R points at the
+cursor, and the panel's compass has the eight quick facings round an Aim
+button.
 
 **Line of sight runs in integer arithmetic.** Sight lines go from tile centre
 to tile centre, and those very often pass exactly through a tile corner. The
@@ -180,12 +191,19 @@ theme into an offscreen canvas (`ART_PX` per tile) and scaled each frame.
 discs with a small nose, and players could tell neither the classes apart nor
 which way anything faced. Now `UNIT_SHAPE` (`src/game/glyphs.ts`) gives each
 class a shape (rifleman circle, scout diamond, engineer gear, heavy hexagon,
-sniper triangle, riot shield, commando dart, breacher chamfered square) and
+sniper triangle, riot shield, commando dart, shotgun chamfered square,
+healer cross, officer star) and
 `UNIT_SIZE` a size; the board rotates the shape to the facing and draws a
 white arrow in front, with the symbol kept upright. The panel and the rules
 page draw the same shapes as SVG (`unitBadgeSvg`), so a class looks the same
 everywhere. The unit under the cursor shows its firing arc, enemies' too.
 Health is a bar under the token, not a ring, because rings don't fit shapes.
+A sniper that hasn't moved carries a tripod badge (braced: full accuracy);
+a healer or officer under the cursor or selected shows the square its help
+reaches; a sniper's arc includes its scope's long strip; unarmed units have
+no arc. The battle board always fills its area (`Camera` with `fill`): no
+zooming out past it and no panning off the edge, so there is never an empty
+frame round the map. The editor keeps the whole-map fit.
 
 **The whole battle can be played from the keyboard.** A cursor square is
 always on the board (`s.hover`; the mouse moves it too and leaving the board
@@ -228,6 +246,29 @@ the snapshot so the browser's hit chances match. Games from before snapshots
 use the files. **Any new server-side call into `src/game` for a game must go
 through `inGame`**, or it reads the files' numbers instead of the game's.
 Use `scripts/simulate.ts` to see what a change does.
+
+**Ten classes, as the owner specified them (tuning version 2).** Rifleman
+(basic); engineer (unarmed, the only one that takes income sites); scout
+(fast, far-sighted, weak); shotgun (wide arc, very accurate, damage falling
+fast with distance: `spread`, plus `closeQuarters`); riot (unarmed, almost
+never hit from the front: the shield cuts *hit chance*, and `minHitChance`
+keeps it possible); sniper (`steady`: half accuracy after moving; `scoped`:
+worse the closer the target, and a long narrow strip of extra sight);
+commando (stealth, backstab, two shots, and a backstab from the next tile
+kills outright); heavy (`explosive`: a shell bursts on the target's tile hit
+or miss, hurting everyone round it, either side, not through walls);
+healer (+5 to allies within 2 tiles, even under fire); officer (a rifleman
+whose neighbours within 2 shoot better; `previewShot` needs the units list to
+see it, so every caller passes the units it knows). Hits vary ±10%
+(`damageVariance`, a second roll) and the panel and reticles show the hit
+chance and the damage range before firing.
+
+**Games from before version 2 are upgraded, not refused.** Their snapshot has
+no `version`: `upgradeSnapshot` keeps their numbers where the field still
+exists and takes the rest (new classes, new fields, all traits) from the
+files; `games.ts` converts their logged facings (eighths × 45) and the
+breacher to the shotgun as it replays. Their outcomes can still differ, since
+the rules code changed under them.
 
 ## Traps worth remembering
 
@@ -281,7 +322,7 @@ the server after `seed`/`unseed`, or it serves games that no longer exist.
 
 ## Adding things
 
-- **A unit class:** a file in `tuning/units/`, its import and `UNIT_KINDS`
+- **A unit class:** a file in `tuning/units/` (with every field, `shots` included), its import and `UNIT_KINDS`
   entry in `src/game/tuning.ts`, its kind in `UnitKind` (`types.ts`), a glyph,
   a shape and a size in `glyphs.ts` (a shape no other class uses), and if it has a new trait, the trait in `TRAITS`
   (`tuning.ts`), the rule where it applies (`combat.ts` or `rules.ts`), any

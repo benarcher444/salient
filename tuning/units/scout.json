@@ -7,8 +7,9 @@
   "sight": 11,
   "range": 6,
   "optimal": 3,
-  "accuracy": 65,
+  "accuracy": 75,
   "damage": 18,
   "arc": 150,
+  "shots": 1,
   "traits": []
 }

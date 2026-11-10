@@ -40,24 +40,33 @@ rifleman's damage changes new games only, never one in progress.
 | `move` | How far it walks in a round, in tiles. A diagonal step costs 1.5, woods cost double. |
 | `sight` | How far it sees, in tiles, all the way round. Walls and rock block sight. |
 | `range` | The furthest it can shoot, in tiles. |
-| `optimal` | Its best range. Past this, accuracy falls off steadily to half at `range`. Must not be more than `range`. |
+| `optimal` | Its best range. Past this, accuracy falls off steadily to `longRangeAccuracy` (in `rules.json`) at `range`. Must not be more than `range`. |
 | `accuracy` | Percent chance to hit at its best range in the open (cover and so on reduce it). |
-| `damage` | Damage per hit, before facing, traits and critical hits. |
+| `damage` | Damage per hit, before facing, traits and critical hits. A hit does this ± `damageVariance`. |
 | `arc` | Width of its firing arc in degrees, centred on where it faces. 360 shoots all round. |
-| `traits` | A list of special rules from the table below, e.g. `["armoured"]`, or `[]`. |
+| `shots` | Shots it can take in its attack turn. 1 for most; the commando has 2, and can switch targets between them. |
+| `traits` | A list of special rules from the table below, e.g. `["stealth", "backstab"]`, or `[]`. |
+
+An `unarmed` unit ignores `range`, `optimal`, `accuracy`, `damage`, `arc` and
+`shots`; they are kept at 0 (or 1) only because every file has every field.
 
 ### Traits
 
-| Trait | What it does | Its number in `rules.json` |
+| Trait | What it does | Its numbers in `rules.json` |
 |---|---|---|
+| `unarmed` | Can't shoot at all (the engineer and the riot shield). | |
 | `engineer` | Can capture income sites. | |
-| `medic` | Allies standing next to it heal extra at round end. | `medicHeal` |
-| `armoured` | Takes less damage from everything. | `traits.armouredDamage` |
-| `shield` | Takes much less damage from shots that arrive from in front. | `traits.shieldFrontDamage` |
+| `medic` | Allies within a few tiles heal extra at round end, even if they were hit that round. | `medicHeal`, `medicRange` |
+| `command` | Allies within a few tiles (not itself) shoot more accurately and harder. | `traits.commandRange`, `traits.commandAccuracy`, `traits.commandDamage` |
+| `shield` | Shots that arrive from in front are much less likely to hit. Never quite impossible: `minHitChance` still applies. | `traits.shieldFrontHit` |
 | `stealth` | Enemies only see it within a few tiles. | `traits.stealthRange` |
-| `backstab` | Shots into an enemy's back hit far harder. | `traits.backstabMultiplier` |
-| `steady` | Accuracy drops if it moved this round, and when the target is very close. | `traits.steadyPenalty`, `traits.steadyMinRange` |
+| `backstab` | Shots into an enemy's back hit far harder, and a hit from right next to its back kills outright. | `traits.backstabMultiplier`, `traits.backstabFatalRange` |
+| `steady` | Accuracy drops if it moved this round (the board shows a tripod while it hasn't). | `traits.steadyPenalty` |
+| `scoped` | Accuracy drops the closer the target is than `optimal`; also sees a long, narrow strip straight ahead. | `traits.scopedCloseAccuracy`, `traits.scopeSight`, `traits.scopeArc` |
 | `closeQuarters` | Ignores cover when the target is close. | `traits.closeQuartersRange` |
+| `spread` | Damage falls away with distance: full next to the target, down to a fraction at `range`. | `traits.spreadFarDamage` |
+| `explosive` | Every shot bursts on the target's tile: a hit does full damage to the target and blast damage to every unit on the tiles round it (either side, not through walls); a miss does blast damage to the target too. | `traits.splashDamage` |
+| `armoured` | Takes less damage from everything. (No class has it at the moment.) | `traits.armouredDamage` |
 
 Adding a brand new trait needs code (see `CLAUDE.md`); these files can give
 any class any of the existing ones.
@@ -69,19 +78,30 @@ any class any of the existing ones.
 | `startGold` | Gold each side starts with. |
 | `baseIncome` | Gold every side gets at the end of every round. Income sites add their own value on top (set per site in the map). |
 | `healPerRound` | Health a unit regains at round end if it wasn't hit that round. |
-| `medicHeal` | Extra health for a unit next to a medic (an engineer) at round end. |
+| `medicHeal` | Extra health at round end for a unit near a medic (the healer), hit or not. |
+| `medicRange` | How near, in tiles, counting diagonals as one (2 = the 5×5 square round the healer). |
 | `critChance` | Share of hits that are critical, from 0 to 1 (0.1 = one hit in ten). |
 | `critMultiplier` | A critical hit's damage multiplier. |
+| `damageVariance` | How much a hit's damage varies either way, from 0 to 1 (0.1 = 10% less to 10% more). |
 | `roundLimit` | If nobody has won after this many rounds, the game is a draw. |
 | `siteSight` | How far you see around base tiles and command posts you hold. |
 | `minHitChance`, `maxHitChance` | Every shot's chance is kept between these percentages. |
-| `coverFactor` | Hit chance is multiplied by this when the target is in cover (0.6 = 40% less likely). |
+| `coverFactor` | Hit chance is multiplied by this when the target is in cover (0.7 = 30% less likely). |
 | `obstructionFactor` | Multiplied once for each thing partly in the way (up to three). |
+| `longRangeAccuracy` | Accuracy at a unit's maximum `range`, as a share of its accuracy at `optimal` (0.65 = 35% less). It falls steadily between the two. |
 | `flank.front`, `flank.side`, `flank.rear` | Damage multiplier by which side of the target the shot hits. |
-| `traits.armouredDamage` | Armoured units take damage × this (0.8 = 20% less). |
-| `traits.shieldFrontDamage` | Shield units take front damage × this (0.4 = 60% less). |
+| `traits.shieldFrontHit` | Shield units are hit from the front this share as often (0.1 = a tenth). |
 | `traits.backstabMultiplier` | A backstab unit's damage into a back is its `damage` × this (instead of `flank.rear`). |
+| `traits.backstabFatalRange` | From this close behind (in tiles, diagonals counting as one), a backstab hit kills outright. |
 | `traits.stealthRange` | Stealth units are only seen by enemies within this many tiles (with a clear line). |
-| `traits.steadyPenalty` | Steady units' hit chance × this if they moved, or the target is too close. |
-| `traits.steadyMinRange` | "Too close" for a steady unit, in tiles. |
+| `traits.steadyPenalty` | Steady units' hit chance × this if they moved this round. |
+| `traits.scopedCloseAccuracy` | A scoped unit's accuracy against a target right next to it, as a share; it rises steadily to full at its `optimal` range. |
+| `traits.scopeSight` | How far a scope's strip of sight reaches, in tiles. |
+| `traits.scopeArc` | How wide that strip is, in degrees. |
 | `traits.closeQuartersRange` | Close-quarters units ignore cover within this many tiles. |
+| `traits.spreadFarDamage` | A spread unit's damage at its maximum range, as a share of full (0.3 = 30%). |
+| `traits.splashDamage` | An explosive's blast damage, as a share of its `damage` (0.4 = 40%). |
+| `traits.commandRange` | How near an officer must be to help, in tiles (diagonals counting as one). |
+| `traits.commandAccuracy` | Hit chance × this with an officer near. |
+| `traits.commandDamage` | Damage × this with an officer near. |
+| `traits.armouredDamage` | Armoured units take damage × this (0.8 = 20% less). |

@@ -11,9 +11,9 @@ import { getMap, registerMap } from "./game/maps.js";
 import { streamFor } from "./game/rng.js";
 import { applyAction, newGame } from "./game/rules.js";
 import { chooseAction } from "./game/bot.js";
-import { FILE_TUNING, checkTuning, withTuning, type Tuning } from "./game/tuning.js";
+import { FILE_TUNING, TUNING_VERSION, upgradeSnapshot, withTuning, type Tuning } from "./game/tuning.js";
 import { viewFor } from "./game/view.js";
-import { RuleError, type Action, type GameEvent, type GameState, type MapDef, type Seat } from "./game/types.js";
+import { RuleError, type Action, type GameEvent, type GameState, type MapDef, type Seat, type UnitKind } from "./game/types.js";
 
 export interface PlayerInfo {
   seat: Seat;
@@ -75,7 +75,24 @@ export function mapFor(game: Pick<Game, "id" | "mapId" | "mapData">): MapDef {
  * Games from before snapshots use the files as they are now.
  */
 export function tuningFor(game: Pick<Game, "rulesData">): Tuning {
-  return game.rulesData ? checkTuning(JSON.parse(game.rulesData) as Tuning) : FILE_TUNING;
+  return game.rulesData ? upgradeSnapshot(JSON.parse(game.rulesData) as Tuning & { version?: number }) : FILE_TUNING;
+}
+
+/** Was this game created before tuning version 2 (eighth-turn facings, the breacher)? */
+const isLegacy = (game: Pick<Game, "rulesData">) =>
+  !game.rulesData || (JSON.parse(game.rulesData) as { version?: number }).version !== TUNING_VERSION;
+
+/** An action from an older game, in today's terms: facings in degrees, the breacher as the shotgun. */
+function upgradeAction(action: Action): Action {
+  if (action.type !== "orders") return action;
+  const kind = (k: string) => (k === "breacher" ? "shotgun" : k) as UnitKind;
+  return {
+    ...action,
+    orders: {
+      moves: action.orders.moves.map((m) => ({ ...m, facing: m.facing * 45 })),
+      spawns: action.orders.spawns.map((s) => ({ ...s, kind: kind(s.kind), facing: s.facing * 45 })),
+    },
+  };
 }
 
 /** Run rules code for this game under its own tuning. Every call into src/game for a game goes through here. */
@@ -89,10 +106,12 @@ export const inGame = <T>(live: Pick<LiveGame, "tuning">, fn: () => T): T => wit
 function replay(game: Game, map: MapDef): { state: GameState; actionCount: number } {
   const rows = db.select().from(gameActions).where(eq(gameActions.gameId, game.id)).orderBy(asc(gameActions.seq)).all();
   let state = newGame(map.id, game.seatCount);
+  const legacy = isLegacy(game);
   for (const row of rows) {
     if (state.phase === "over") break;
     try {
-      state = applyAction(state, JSON.parse(row.payload) as Action, streamFor(game.seed, row.seq)).state;
+      const action = JSON.parse(row.payload) as Action;
+      state = applyAction(state, legacy ? upgradeAction(action) : action, streamFor(game.seed, row.seq)).state;
     } catch (e) {
       if (!(e instanceof RuleError)) throw e;
       console.warn(`game ${game.id}: replay stopped at action ${row.seq} (${e.message}); it was played under older rules`);
@@ -167,7 +186,7 @@ export function createGame(userId: number, map: MapDef, seatCount: number, bots 
   const botIds = bots ? botUserIds(seatCount - 1) : [];
   const mapData = JSON.stringify(map);
   const snapshot = mapFor({ id, mapId: map.id, mapData });
-  const rulesData = JSON.stringify(FILE_TUNING);
+  const rulesData = JSON.stringify({ version: TUNING_VERSION, ...FILE_TUNING });
   sqlite.transaction(() => {
     db.insert(games)
       .values({

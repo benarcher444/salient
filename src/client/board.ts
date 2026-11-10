@@ -1,10 +1,11 @@
 // Drawing the battle, every frame: the cached map art, sites, fog, orders,
 // units and effects, in that order.
-import { previewShot } from "../game/combat.js";
+import { damageRange, previewShot } from "../game/combat.js";
+import { RULES } from "../game/constants.js";
 import { facingAngle } from "../game/grid.js";
 import { pathTo } from "../game/movement.js";
 import { UNIT_GLYPH, UNIT_SHAPE, UNIT_SIZE, shapeFront } from "../game/glyphs.js";
-import { UNITS } from "../game/units.js";
+import { UNITS, hasTrait } from "../game/units.js";
 import { baseTiles } from "../game/visibility.js";
 import type { Point, Unit } from "../game/types.js";
 import { Animator } from "./animate.js";
@@ -52,7 +53,7 @@ export class Board {
     private readonly s: ClientState,
   ) {
     this.ctx = canvas.getContext("2d")!;
-    this.camera = new Camera(s.map.width, s.map.height);
+    this.camera = new Camera(s.map.width, s.map.height, true);
     this.pal = readPalette();
     this.fog = document.createElement("canvas");
     this.fog.width = s.map.width * FOG_PX;
@@ -77,12 +78,31 @@ export class Board {
     this.canvas.style.height = `${r.height}px`;
     // Keep the whole map in view as the layout settles (the panel fills in,
     // a phone rotates) until the player pans or zooms themselves.
-    if (!this.userMoved) this.camera.fit(this.w, this.h);
+    if (!this.userMoved) this.fitHome();
   }
 
   fit() {
     this.userMoved = false;
+    this.fitHome();
+  }
+
+  /**
+   * Fill the view and, where the map is cropped, centre on this player's own
+   * base, so what they deploy onto is on screen. (The camera keeps the map
+   * covering the view, so this never shows past an edge.)
+   */
+  private fitHome() {
     this.camera.fit(this.w, this.h);
+    const v = this.s.view;
+    const seat = v?.seat ?? null;
+    if (!v || seat === null) return;
+    const home = baseTiles(this.s.map, v.seats.length).filter((t, i) => v.baseOwners[i] === seat || t.home === seat);
+    if (!home.length) return;
+    const cx = home.reduce((t, p) => t + p.x + 0.5, 0) / home.length;
+    const cy = home.reduce((t, p) => t + p.y + 0.5, 0) / home.length;
+    this.camera.x = cx - this.w / this.camera.scale / 2;
+    this.camera.y = cy - this.h / this.camera.scale / 2;
+    this.camera.clamp(this.w, this.h);
   }
 
   /** Pan just enough to keep a tile, and a tile around it, on screen. True if the view moved. */
@@ -97,6 +117,7 @@ export class Board {
     else if (p.x + 1 > cam.x + visW) cam.x = p.x + 2 - visW;
     if (p.y < cam.y) cam.y = p.y - 1;
     else if (p.y + 1 > cam.y + visH) cam.y = p.y + 2 - visH;
+    cam.clamp(this.w, this.h);
     return cam.x !== x0 || cam.y !== y0;
   }
 
@@ -268,7 +289,7 @@ export class Board {
 
     // The selected unit's reach and the route to the hovered tile.
     const sel = s.selected;
-    if (canPlan(s) && sel?.type === "unit") {
+    if (canPlan(s) && sel?.type === "unit" && !s.aiming) {
       const u = unitById(s, sel.id);
       if (u && isMine(s, u)) {
         const reach = reachOf(s, u);
@@ -343,7 +364,21 @@ export class Board {
   private arc(cx: number, cy: number, kind: Unit["kind"], facing: number, colour: string, strength: number) {
     const g = this.ctx;
     const st = UNITS[kind];
-    const heading = facingAngle(facing as Unit["facing"]) - Math.PI / 2;
+    const heading = facingAngle(facing) - Math.PI / 2;
+    if (hasTrait(kind, "scoped")) {
+      // The scope's long, narrow strip of sight, faintly, beyond the firing arc.
+      const halfScope = ((RULES.traits.scopeArc / 2) * Math.PI) / 180;
+      g.strokeStyle = alpha(colourHex(colour), strength * 2);
+      g.lineWidth = 0.03;
+      g.setLineDash([0.2, 0.15]);
+      g.beginPath();
+      g.moveTo(cx, cy);
+      g.arc(cx, cy, RULES.traits.scopeSight, heading - halfScope, heading + halfScope);
+      g.closePath();
+      g.stroke();
+      g.setLineDash([]);
+    }
+    if (hasTrait(kind, "unarmed")) return;
     const half = ((st.arc / 2) * Math.PI) / 180;
     const grad = g.createRadialGradient(cx, cy, 0.3, cx, cy, st.range);
     grad.addColorStop(0, alpha(colourHex(colour), strength * 1.8));
@@ -375,7 +410,7 @@ export class Board {
     // sit over a unit that is still walking or fading into view.
     if (now < this.anim.busyUntil) return;
     for (const t of targetsOf(s, shooter)) {
-      const p = previewShot(s.map, shooter, t);
+      const p = previewShot(s.map, shooter, t, v.units);
       const chosen = sel?.type === "target" && sel.targetId === t.id;
       const tx = t.x + 0.5;
       const ty = t.y + 0.5;
@@ -399,7 +434,9 @@ export class Board {
         g.arc(tx, ty, 0.56, a, a + 0.9);
         g.stroke();
       }
-      this.label(`${Math.round(p.chance * 100)}%`, tx, ty - 0.8, chosen ? this.pal.danger : this.pal.ink);
+      const [lo, hi] = damageRange(p);
+      const dmg = p.fatal ? "kill" : lo === hi ? `${lo}` : `${lo}–${hi}`;
+      this.label(`${Math.round(p.chance * 100)}% · ${dmg}`, tx, ty - 0.8, chosen ? this.pal.danger : this.pal.ink);
     }
   }
 
@@ -439,12 +476,15 @@ export class Board {
       const p = this.anim.pose(u, now);
       const acted = v.phase === "attack" && v.acted.includes(u.id);
       const isSel = (sel?.type === "unit" && sel.id === u.id) || (sel?.type === "target" && (sel.shooterId === u.id || sel.targetId === u.id));
+      const moving = !!moveOrderFor(s, u.id)?.path.length && v.phase === "planning";
       this.token(u, p.x, p.y, p.angle, p.alpha * (acted ? 0.6 : 1), {
         selected: isSel,
         ready: myTurn && ready.has(u.id) && !acted,
         hp: this.anim.hp(u, now),
         now,
-        moving: !!moveOrderFor(s, u.id)?.path.length && v.phase === "planning",
+        moving,
+        // A sniper that hasn't moved has its tripod down: full accuracy.
+        braced: hasTrait(u.kind, "steady") && !u.moved && !moving,
       });
     }
     for (const gh of this.anim.ghosts) {
@@ -463,6 +503,22 @@ export class Board {
         this.token(gh.unit, x, y, facingAngle(gh.unit.facing), Math.max(0, 1 - t), { hp: gh.unit.hp, now });
       }
     }
+  }
+
+  /** An explosion: a flash and a ring spreading over the tiles round the target. */
+  private blast(x: number, y: number, t: number) {
+    const g = this.ctx;
+    const fade = Math.max(0, 1 - t);
+    g.fillStyle = alpha(colourHex(this.pal.warn), 0.45 * fade);
+    g.beginPath();
+    g.arc(x, y, 0.4 + t * 1.1, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = alpha("#fff3c4", fade);
+    g.lineWidth = 0.08;
+    g.beginPath();
+    g.arc(x, y, 0.3 + t * 1.3, 0, Math.PI * 2);
+    g.stroke();
+    this.burst(x, y, this.pal.danger, t);
   }
 
   private burst(x: number, y: number, colour: string, t: number) {
@@ -487,7 +543,17 @@ export class Board {
     cy: number,
     angle: number,
     opacity: number,
-    o: { selected?: boolean; ready?: boolean; ghost?: boolean; hp?: number; now?: number; badge?: string; moving?: boolean; scale?: number } = {},
+    o: {
+      selected?: boolean;
+      ready?: boolean;
+      ghost?: boolean;
+      hp?: number;
+      now?: number;
+      badge?: string;
+      moving?: boolean;
+      scale?: number;
+      braced?: boolean;
+    } = {},
   ) {
     if (opacity <= 0) return;
     const g = this.ctx;
@@ -590,6 +656,28 @@ export class Board {
       g.fillStyle = f > 0.6 ? this.pal.ok : f > 0.3 ? this.pal.warn : this.pal.danger;
       g.fillRect(bx, by, bw * f, 0.07);
     }
+    if (o.braced) {
+      // A tripod in a small disc at the token's lower left: braced for full accuracy.
+      const bx = cx - r * 0.95;
+      const by = cy + r * 0.7;
+      g.fillStyle = this.pal.ink;
+      g.beginPath();
+      g.arc(bx, by, 0.15, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = "#ffffff";
+      g.lineWidth = 0.035;
+      g.lineCap = "round";
+      g.beginPath();
+      g.moveTo(bx - 0.07, by - 0.07);
+      g.lineTo(bx + 0.07, by - 0.07);
+      g.moveTo(bx, by - 0.07);
+      g.lineTo(bx - 0.08, by + 0.08);
+      g.moveTo(bx, by - 0.07);
+      g.lineTo(bx + 0.08, by + 0.08);
+      g.moveTo(bx, by - 0.07);
+      g.lineTo(bx, by + 0.09);
+      g.stroke();
+    }
     if (o.badge) {
       // A small "+" disc: drawn as strokes, not text, so it stays crisp.
       const bx = cx + r * 0.85;
@@ -619,7 +707,7 @@ export class Board {
       const fy = t.from.y + 0.5;
       let tx = t.to.x + 0.5;
       let ty = t.to.y + 0.5;
-      if (!t.hit) {
+      if (!t.hit && !t.blast) {
         // A miss flies past, a little to one side.
         const a = Math.atan2(ty - fy, tx - fx) + 0.12;
         const d = Math.hypot(tx - fx, ty - fy) + 1;
@@ -643,7 +731,8 @@ export class Board {
         g.arc(fx, fy, 0.22, 0, Math.PI * 2);
         g.fill();
       }
-      if (t.hit && k >= 1) this.burst(tx, ty, this.pal.danger, Math.min(1, (now - t.start - 260) / 400));
+      if (t.blast && k >= 1) this.blast(tx, ty, Math.min(1, (now - t.start - 260) / 500));
+      else if (t.hit && k >= 1) this.burst(tx, ty, this.pal.danger, Math.min(1, (now - t.start - 260) / 400));
     }
     for (const f of this.anim.floaters) {
       const k = (now - f.start) / 1300;
@@ -656,16 +745,39 @@ export class Board {
     }
   }
 
-  /** The firing arc of whatever unit is under the cursor, either side's. */
+  /**
+   * The firing arc of whatever unit is under the cursor, either side's, and
+   * the reach of a healer's or officer's help (under the cursor or selected).
+   */
   private drawCursorArc(now: number) {
     const h = this.s.hover;
     const v = this.s.view;
-    if (!h || !v) return;
-    const u = v.units.find((x) => x.x === h.x && x.y === h.y);
-    if (!u) return;
-    const p = this.anim.pose(u, now);
+    if (!v) return;
+    const sel = this.s.selected;
+    const selected = sel?.type === "unit" ? unitById(this.s, sel.id) : undefined;
+    const hovered = h ? v.units.find((x) => x.x === h.x && x.y === h.y) : undefined;
+    for (const u of new Set([hovered, selected])) {
+      if (!u) continue;
+      const range = hasTrait(u.kind, "medic") ? RULES.medicRange : hasTrait(u.kind, "command") ? RULES.traits.commandRange : 0;
+      if (range > 0) this.auraRing(u, range);
+    }
+    if (!hovered) return;
+    const p = this.anim.pose(hovered, now);
     if (p.alpha < 0.5) return;
-    this.arc(p.x, p.y, u.kind, u.facing, this.pal.seats[u.seat]!, 0.13);
+    this.arc(p.x, p.y, hovered.kind, hovered.facing, this.pal.seats[hovered.seat]!, 0.13);
+  }
+
+  /** A dashed square round a unit: the tiles its help reaches (healing, an officer's boost). */
+  private auraRing(u: Unit, range: number) {
+    const g = this.ctx;
+    const colour = this.pal.seats[u.seat]!;
+    g.fillStyle = alpha(colourHex(colour), 0.08);
+    g.fillRect(u.x - range, u.y - range, range * 2 + 1, range * 2 + 1);
+    g.strokeStyle = alpha(colourHex(colour), 0.7);
+    g.lineWidth = 0.05;
+    g.setLineDash([0.18, 0.12]);
+    g.strokeRect(u.x - range + 0.05, u.y - range + 0.05, range * 2 + 0.9, range * 2 + 0.9);
+    g.setLineDash([]);
   }
 
   /**

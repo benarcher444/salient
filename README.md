@@ -20,8 +20,11 @@ battlefields in the map editor and play them straight away.
 - **A round:** everyone **plans** at once (deploy units, give each a route and
   a facing) → everything **moves** together, step by step → players take turns
   **firing** one unit at a time → **upkeep**: captures, income, healing.
-- **Eight unit classes:** rifleman, scout, engineer, heavy, sniper, riot,
-  commando and breacher, each with its own cost, range, firing arc and trait.
+- **Ten unit classes:** rifleman, engineer (unarmed, takes income sites),
+  scout, shotgun, riot shield (unarmed), sniper, commando, heavy (explosives),
+  healer and officer, each with its own cost, range, firing arc and traits.
+- **Facing is free:** a unit can point any direction, and which side a shot
+  hits from changes its damage.
 - **The map:** walls block movement and sight; windows and low walls block
   movement but you can shoot through them; crates, low walls and woods give
   cover; rock blocks everything.

@@ -1,14 +1,15 @@
 {
   "name": "Riot",
-  "role": "Shield bearer. Leads the push into a building.",
-  "cost": 130,
+  "role": "Unarmed shield bearer. Almost impossible to hit from the front.",
+  "cost": 110,
   "hp": 130,
   "move": 4,
   "sight": 7,
-  "range": 3,
-  "optimal": 2,
-  "accuracy": 80,
-  "damage": 25,
+  "range": 0,
+  "optimal": 0,
+  "accuracy": 0,
+  "damage": 0,
   "arc": 120,
-  "traits": ["shield"]
+  "shots": 1,
+  "traits": ["shield", "unarmed"]
 }

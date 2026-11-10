@@ -58,10 +58,12 @@ export type UnitKind =
   | "sniper"
   | "riot"
   | "commando"
-  | "breacher";
+  | "shotgun"
+  | "healer"
+  | "officer";
 
-/** 0 = north, then clockwise in 45 degree steps: 2 = east, 4 = south, 6 = west. */
-export type Facing = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
+/** Whole degrees, 0..359: 0 = north, clockwise, so 90 = east, 180 = south, 270 = west. */
+export type Facing = number;
 
 export interface Unit {
   id: number;
@@ -71,7 +73,7 @@ export interface Unit {
   y: number;
   facing: Facing;
   hp: number;
-  /** Took at least one step this round (the sniper's steady-aim rule reads it). */
+  /** Took at least one step this round (the sniper's braced-aim rule reads it). */
   moved: boolean;
   /** Was hit this round, so it does not heal at the end of it. */
   damaged: boolean;
@@ -126,6 +128,12 @@ export interface GameState {
   /** Attack phase: whose activation it is, and which units have used theirs. */
   attackTurn: Seat | null;
   actedUnitIds: number[];
+  /**
+   * A unit with more than one shot (the commando) part way through them: its
+   * side keeps the turn, and only it may act, until it has fired them all or
+   * holds. null otherwise.
+   */
+  burst: { unitId: number; fired: number } | null;
   /** Set when phase is "over". null with phase "over" is a draw. */
   winner: Seat | null;
 }
@@ -155,6 +163,8 @@ export type GameEvent =
       crit: boolean;
       damage: number;
       killed: boolean;
+      /** Explosives: the units caught by the blast (the target too, on a miss). */
+      splash: { unitId: number; seat: Seat; at: Point; damage: number; killed: boolean }[];
     }
   | { type: "hold"; unitId: number; seat: Seat }
   | { type: "capture"; site: "post" | "income" | "base"; index: number; from: Seat | null; to: Seat | null }
@@ -186,6 +196,7 @@ export type RuleErrorCode =
   | "not_enough_gold"
   | "already_acted"
   | "cannot_shoot"
+  | "finish_burst"
   | "game_over";
 
 export const ERROR_TEXT: Record<RuleErrorCode, string> = {
@@ -203,5 +214,6 @@ export const ERROR_TEXT: Record<RuleErrorCode, string> = {
   not_enough_gold: "You can't afford that.",
   already_acted: "That unit has already acted this round.",
   cannot_shoot: "That unit can't hit that target from here.",
+  finish_burst: "Your unit still has a shot to take: fire it or hold.",
   game_over: "The game is over.",
 };

@@ -82,6 +82,35 @@ check("the waiting room moves on by itself", (await alex.page.locator("#board").
 for (const p of [alex, sam]) await waitFor(p.page, "first state", async () => (await hooks(p.page, (h) => h.phase())) !== null);
 
 console.log("\nDeploying\n");
+let aimChecked = false;
+
+/**
+ * Send every unit of this player to the free reachable tile nearest `goal`,
+ * never two to one tile. Each route is set by clicking, which leaves the unit
+ * aiming at the pointer; a click on the goal then sets its facing.
+ */
+async function marchAll(page: Page, goal: { x: number; y: number }) {
+  const chosen: string[] = [];
+  for (const u of await hooks(page, (h) => h.myUnits())) {
+    await tapTile(page, u.x, u.y);
+    const best = (await page.evaluate(`(() => {
+      const taken = new Set([...window.__salient.myUnits().map((m) => m.x + "," + m.y), ...${JSON.stringify(chosen)}]);
+      const r = window.__salient.reach(${u.id}).filter((t) => !taken.has(t.x + "," + t.y));
+      r.sort((a, b) => Math.hypot(a.x - ${goal.x}, a.y - ${goal.y}) - Math.hypot(b.x - ${goal.x}, b.y - ${goal.y}));
+      return r[0];
+    })()`)) as { x: number; y: number } | undefined;
+    if (best) {
+      chosen.push(`${best.x},${best.y}`);
+      await tapTile(page, best.x, best.y);
+      if (!aimChecked) check("setting a route with the mouse starts aiming", (await page.textContent("#panel"))?.includes("Aiming") ?? false);
+      await tapTile(page, goal.x, goal.y);
+      if (!aimChecked) check("the next click sets the facing and stops aiming", !((await page.textContent("#panel"))?.includes("Aiming") ?? true));
+      aimChecked = true;
+    }
+    await page.keyboard.press("Escape"); // deselect
+  }
+}
+
 async function deploy(page: Page, kinds: string[]) {
   for (const kind of kinds) {
     // Tiles already holding a planned deployment select that instead of
@@ -95,7 +124,7 @@ async function deploy(page: Page, kinds: string[]) {
   }
 }
 await deploy(alex.page, ["rifleman", "rifleman"]);
-const gold = await alex.page.textContent("#gold");
+const gold = await alex.page.textContent("#gold strong");
 check("the gold display counts planned deployments", gold?.includes("100") ?? false, gold ?? "");
 await alex.page.click('[data-action="submit"]');
 await alex.page.waitForSelector('[data-action="edit-orders"]', { timeout: 10_000 });
@@ -108,7 +137,9 @@ await sam.page.click('[data-action="submit"]');
 await waitFor(alex.page, "round 2", async () => (await hooks(alex.page, (h) => h.phase()))?.round === 2);
 check("when both are in, the round resolves", true);
 check("Alex has two units", (await hooks(alex.page, (h) => h.myUnits().length)) === 2);
-check("Sam has two units", (await hooks(sam.page, (h) => h.myUnits().length)) === 2);
+await waitFor(sam.page, "Sam's round 2", async () => (await hooks(sam.page, (h) => h.phase()))?.round === 2);
+const samUnits = await hooks(sam.page, (h) => h.myUnits());
+check("Sam has two units", samUnits.length === 2, JSON.stringify(samUnits) + " " + ((await sam.page.textContent("#panel")) ?? "").slice(0, 300));
 check("neither can see the other's base yet", (await hooks(alex.page, (h) => h.enemyUnits().length)) === 0);
 
 console.log("\nMarching until someone has a shot\n");
@@ -117,24 +148,7 @@ for (let round = 0; round < 8 && !fired; round++) {
   for (const p of [alex, sam]) {
     const state = await hooks(p.page, (h) => h.phase());
     if (state?.phase !== "planning") continue;
-    const units = await hooks(p.page, (h) => h.myUnits());
-    for (const u of units) {
-      await tapTile(p.page, u.x, u.y);
-      // Head for the centre of the map: the reachable tile nearest (12, 8).
-      const best = await p.page.evaluate(`(() => {
-        const r = window.__salient.reach(${u.id}).filter((t) => !(t.x === ${u.x} && t.y === ${u.y}));
-        const taken = new Set(window.__salient.myUnits().map((m) => m.x + "," + m.y));
-        r.sort((a, b) => Math.hypot(a.x - 12, a.y - 8) - Math.hypot(b.x - 12, b.y - 8));
-        return r.find((t) => !taken.has(t.x + "," + t.y));
-      })()`) as { x: number; y: number } | undefined;
-      if (best) await tapTile(p.page, best.x, best.y);
-      await tapTile(p.page, u.x, u.y); // deselect
-    }
-    const problem = await p.page.locator(".panel-action .alert").count();
-    if (problem) {
-      // Two units aimed at one tile: drop the second unit's order.
-      await p.page.click('[data-action="clear-order"]').catch(() => {});
-    }
+    await marchAll(p.page, { x: 12, y: 8 });
     await p.page.click('[data-action="submit"]');
     await p.page.waitForTimeout(150);
   }
@@ -153,7 +167,7 @@ for (let round = 0; round < 8 && !fired; round++) {
       await tapTile(p.page, shooter.x, shooter.y);
       await tapTile(p.page, target.x, target.y);
       const chance = await p.page.textContent('[data-action="fire"]');
-      check("choosing a target shows the hit chance before firing", /\d+%/.test(chance ?? ""), chance ?? "");
+      check("choosing a target shows the hit chance and damage before firing", /\d+% · (\d+(–\d+)?|kills)/.test(chance ?? ""), chance ?? "");
       if (!fired) await p.page.screenshot({ path: "screenshots/flow-aim.png" });
       const before = (await hooks(p.page, (h) => h.log())).length;
       await p.page.click('[data-action="fire"]');
@@ -197,7 +211,7 @@ const forged = await alex.page.evaluate(async (url) => {
         resolve(m.code);
         ws.close();
       } else if (m.type === "state") {
-        ws.send(JSON.stringify({ type: "action", action: { type: "orders", orders: { moves: [], spawns: [{ kind: "heavy", x: 24, y: 8, facing: 6 }] } } }));
+        ws.send(JSON.stringify({ type: "action", action: { type: "orders", orders: { moves: [], spawns: [{ kind: "heavy", x: 24, y: 8, facing: 270 }] } } }));
       }
     };
     setTimeout(() => resolve("timeout"), 5000);
@@ -245,18 +259,7 @@ for (let round = 0; round < 12 && !botFired; round++) {
   const st = await hooks(alex.page, (h) => h.phase());
   if (st?.phase === "over") break;
   if (st?.phase === "planning" && (await alex.page.locator('[data-action="submit"]').count())) {
-    for (const u of await hooks(alex.page, (h) => h.myUnits())) {
-      await tapTile(alex.page, u.x, u.y);
-      const best = (await alex.page.evaluate(`(() => {
-        const taken = new Set(window.__salient.myUnits().map((m) => m.x + "," + m.y));
-        const r = window.__salient.reach(${u.id}).filter((t) => !taken.has(t.x + "," + t.y));
-        r.sort((a, b) => Math.hypot(a.x - 14, a.y - 8) - Math.hypot(b.x - 14, b.y - 8));
-        return r[0];
-      })()`)) as { x: number; y: number } | undefined;
-      if (best) await tapTile(alex.page, best.x, best.y);
-      await tapTile(alex.page, u.x, u.y);
-    }
-    if (await alex.page.locator(".panel-action .alert").count()) await alex.page.click('[data-action="clear-order"]').catch(() => {});
+    await marchAll(alex.page, { x: 14, y: 8 });
     await alex.page.click('[data-action="submit"]');
   }
   // Play out the round: fire whenever it is our shot, until a new round starts.

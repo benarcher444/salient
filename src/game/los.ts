@@ -130,7 +130,14 @@ function cornerBlocks(map: MapDef, x: number, y: number, sx: number, sy: number)
 }
 
 /** Tiles within `radius` of `from` that it has a clear line to. */
-export function visibleFrom(map: MapDef, from: Point, radius: number, into: Set<number>): void {
+export function visibleFrom(
+  map: MapDef,
+  from: Point,
+  radius: number,
+  into: Set<number>,
+  /** Only tiles within `halfArc` degrees of `heading` (radians, 0 = north, clockwise). */
+  cone?: { heading: number; halfArc: number },
+): void {
   const r = Math.ceil(radius);
   for (let y = from.y - r; y <= from.y + r; y++) {
     for (let x = from.x - r; x <= from.x + r; x++) {
@@ -138,6 +145,11 @@ export function visibleFrom(map: MapDef, from: Point, radius: number, into: Set<
       const idx = y * map.width + x;
       if (into.has(idx)) continue;
       if (Math.hypot(x - from.x, y - from.y) > radius) continue;
+      if (cone && (x !== from.x || y !== from.y)) {
+        let d = Math.abs(Math.atan2(x - from.x, -(y - from.y)) - cone.heading) % (2 * Math.PI);
+        if (d > Math.PI) d = 2 * Math.PI - d;
+        if ((d * 180) / Math.PI > cone.halfArc) continue;
+      }
       if (traceLine(map, from, { x, y }).clear) into.add(idx);
     }
   }

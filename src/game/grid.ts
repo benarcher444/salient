@@ -129,17 +129,24 @@ export function stepCost(map: MapDef, a: Point, b: Point): number {
   return (diagonal ? 3 : 2) * TERRAIN[terrainAt(map, b.x, b.y)].moveCost;
 }
 
-/** The facing that points from a towards b, snapped to the nearest of the 8. */
+/** A facing in whole degrees, 0..359: any number of degrees, wrapped and rounded. */
+export function normFacing(deg: number): Facing {
+  return ((Math.round(deg) % 360) + 360) % 360;
+}
+
+/** The facing that points from a towards b, to the nearest degree. */
 export function facingToward(a: Point, b: Point): Facing {
   const angle = Math.atan2(b.x - a.x, -(b.y - a.y)); // 0 = north, clockwise positive
-  const step = Math.round(angle / (Math.PI / 4));
-  return (((step % 8) + 8) % 8) as Facing;
+  return normFacing((angle * 180) / Math.PI);
 }
 
 /** Angle of a facing in radians, 0 = north, clockwise. */
 export function facingAngle(f: Facing): number {
-  return (f * Math.PI) / 4;
+  return (f * Math.PI) / 180;
 }
+
+/** The nearest compass point, in words, for a facing. */
+export const facingName = (f: Facing) => FACING_NAME[Math.round(normFacing(f) / 45) % 8]!;
 
 /** Smallest angle between two bearings, in degrees, 0..180. */
 export function angleBetweenDeg(a: number, b: number): number {
