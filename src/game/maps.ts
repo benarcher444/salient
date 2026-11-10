@@ -294,7 +294,98 @@ const fourCorners = (() => {
   return b.build();
 })();
 
-export const MAPS: readonly MapDef[] = [crossroads, riverside, fourCorners];
+const facility = (() => {
+  const b = new MapBuilder(
+    {
+      id: "facility",
+      name: "Facility",
+      blurb: "All indoors: rooms, long corridors and one-tile doorways. Hold the chokepoints.",
+      width: 27,
+      height: 19,
+      seats: 2,
+    },
+    "floor",
+  );
+  // Columns, west to east: each side's wing (storeroom, base room, armoury),
+  // its long service corridor, then the shared middle: a corridor along each
+  // map edge, two offices, a lobby, and the hall in the centre.
+  // Rows of the middle: corridor 0-1, offices 2-6, lobby and hall 7-11,
+  // offices 12-16, corridor 17-18.
+  //
+  // Drawn in two passes. Every room is walled all round first, then the
+  // openings are cut, so one side's walls never close the other's doors
+  // (rooms on the centre line share walls with their rotated twins).
+  b.symmetric((p) => {
+    p.building(0, 0, 5, 6); // storeroom
+    p.building(0, 6, 5, 7); // base room
+    p.building(0, 13, 5, 6); // armoury
+    p.building(5, 0, 2, 19); // service corridor
+    p.building(7, 0, 13, 2); // the corridor along the north edge (the south one is its twin)
+    p.building(7, 2, 6, 5); // north office
+    p.building(7, 12, 6, 5); // south office
+    p.building(13, 2, 1, 5); // a one-tile passage from the corridor down to the hall
+    p.building(7, 7, 2, 5); // lobby
+    p.building(9, 7, 9, 5); // the hall
+    // Bulkheads across the edge corridor, each with a single doorway.
+    p.vwall(11, 0, 2);
+    p.vwall(16, 0, 2);
+  });
+  b.symmetric((p) => {
+    p.base(1, 8, 2, 2);
+
+    // The service corridor meets both edge corridors in open corners.
+    p.edge(7, 0, "w", null);
+    p.edge(7, 1, "w", null);
+    p.edge(7, 17, "w", null);
+    p.edge(7, 18, "w", null);
+    // Wing: storeroom, base room and armoury, each with a door to the service corridor.
+    p.edge(2, 5, "s", "door");
+    p.edge(2, 12, "s", "door");
+    p.edge(4, 1, "e", "door");
+    p.edge(4, 9, "e", "door");
+    p.edge(4, 17, "e", "door");
+    p.edge(4, 7, "e", "window");
+    p.edge(4, 11, "e", "window");
+    // From the service corridor into the middle.
+    p.edge(7, 4, "w", "door");
+    p.edge(7, 9, "w", "door");
+    p.edge(7, 14, "w", "door");
+    // North office: out to the edge corridor and the passage; windows over the corridor and the hall.
+    p.edge(8, 2, "n", "door");
+    p.edge(12, 4, "e", "door");
+    p.edge(10, 2, "n", "window");
+    p.edge(8, 6, "s", "window");
+    p.edge(11, 6, "s", "window");
+    // South office: out to the far edge corridor and the far passage.
+    p.edge(9, 16, "s", "door");
+    p.edge(12, 14, "e", "door");
+    p.edge(10, 12, "n", "window");
+    // The passage's ends: the edge corridor and the hall.
+    p.edge(13, 2, "n", "door");
+    p.edge(13, 6, "s", "door");
+    // Lobby into the hall.
+    p.edge(8, 9, "e", "door");
+    // The bulkheads' doorways.
+    p.edge(11, 1, "w", "door");
+    p.edge(16, 0, "w", "door");
+
+    p.post(10, 4);
+    p.income(2, 2, 25);
+    p.income(10, 14, 20);
+
+    p.tile(11, 8, "crate");
+    p.tile(11, 10, "crate");
+    p.tile(9, 4, "crate");
+    p.tile(8, 15, "crate");
+    p.tile(3, 15, "crate");
+    p.tile(1, 16, "crate");
+    p.tile(6, 6, "crate");
+  });
+  b.pen().post(13, 9);
+  return b.build();
+})();
+
+export const MAPS: readonly MapDef[] = [crossroads, riverside, fourCorners, facility];
 
 // Tests register small purpose-built maps here, so the rules can be exercised
 // on a board where every wall is placed for the case being tested.
