@@ -8,7 +8,8 @@ else does the same; watch them play out together; then trade shots one unit
 at a time. Fog of war hides everything your units can't see. Facing matters:
 hit someone from the side or behind and it hurts more.
 
-Play friends by sending a link, or play the computer. Design your own
+Play friends by sending a link (they can join that game as a guest, no
+account needed), or play the computer. Design your own
 battlefields in the map editor and play them straight away.
 
 ## The game in a minute

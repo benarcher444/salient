@@ -15,6 +15,13 @@ export const users = sqliteTable("users", {
   lockedAt: integer("locked_at"),
   /** A computer opponent. Can never sign in; plays through src/game/bot.ts. */
   isBot: integer("is_bot", { mode: "boolean" }).notNull().default(false),
+  /**
+   * Someone who joined one game through its invite link, with no account:
+   * no email of their own, no password, never signs in. Their session may
+   * reach that one game (`guest_game_id`) and nothing else; see src/guest.ts.
+   */
+  isGuest: integer("is_guest", { mode: "boolean" }).notNull().default(false),
+  guestGameId: text("guest_game_id"),
   createdAt: integer("created_at").notNull(),
 });
 
@@ -58,6 +65,12 @@ export const games = sqliteTable("games", {
    * numbers it was played with. Null for older games, which use the files.
    */
   rulesData: text("rules_data"),
+  /**
+   * The secret in this game's invite link (/g/<id>/invite/<token>), which
+   * lets someone without an account take an open seat as a guest. Made when
+   * first shown; replacing it kills every older link.
+   */
+  inviteToken: text("invite_token"),
 });
 
 /** Maps people have made in the editor. `data` is the MapDef as JSON. */

@@ -122,10 +122,11 @@ export function waitingRoom(user: User, s: GameSummary, shareUrl: string): Html 
       s.mySeat === null
         ? `<form method="post" action="/g/${esc(s.game.id)}/join"><button class="btn btn-primary btn-lg block" type="submit">Join this game</button></form>`
         : `<section class="card"><div class="card-head"><h2>Invite</h2></div><div class="card-body stack">
-      <p class="faint">Send this link. The game starts as soon as the last seat is taken.</p>
+      <p class="faint">Send this link. Anyone with it can take a seat, without an account if need be (as a guest, for this game only). The game starts as soon as the last seat is taken.</p>
       <div class="share"><input class="input mono" id="share-url" readonly value="${esc(shareUrl)}" ${NO_AUTOFILL}><button class="btn" type="button" id="copy-link">${icons.link}<span>Copy</span></button></div>
+      ${user.isGuest ? "" : `<form method="post" action="/g/${esc(s.game.id)}/invite"><button class="btn btn-ghost btn-sm" type="submit" id="new-link">New link (the old one stops working)</button></form>`}
     </div></section>
-    <form method="post" action="/g/${esc(s.game.id)}/leave"><button class="btn btn-ghost" type="submit">${icons.exit}<span>${isCreator ? "Cancel game" : "Leave game"}</span></button></form>`
+    ${user.isGuest ? "" : `<form method="post" action="/g/${esc(s.game.id)}/leave"><button class="btn btn-ghost" type="submit">${icons.exit}<span>${isCreator ? "Cancel game" : "Leave game"}</span></button></form>`}`
     }
   </div>
 </div>`;

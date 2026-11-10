@@ -17,7 +17,8 @@ Every round, everyone plans their moves secretly and at the same time; moves
 resolve together; then players take turns firing one unit at a time.
 
 - **Who signs in:** invited players (email + password). Computer opponents are
-  accounts too, flagged `is_bot`, that can never sign in.
+  accounts too, flagged `is_bot`, that can never sign in. Guests (anyone with
+  a game's invite link) get a seat in that one game without an account.
 - **What it stores:** users, sessions, games (each with a snapshot of its
   map), game players, each game's **action log**, and the maps people make in
   the editor. A game's state is never stored, only rebuilt (see below).
@@ -42,6 +43,7 @@ None of its code did.
 | `npm run test:flow` | Two real browsers play a game, then one plays the computer (server running, seeded) |
 | `npm run test:editor` | The map editor in a real browser: symmetry, tools, undo, autosave, playing a map, deleting it (server running, seeded) |
 | `npm run test:keys` | A game against the computer played with the keyboard alone (server running, seeded) |
+| `npm run test:guest` | A guest joins by invite link, plays, and is kept out of everything else; full games and replaced links refuse (server running, seeded) |
 | `npm run audit:mobile` | Phone-width audit: tap targets, 16px inputs, overflow (server running, seeded) |
 | `npm run shot` | Screenshot every page, 1440 and 390 wide, light and dark (`--only=`, `--light`, `--desktop`, `--viewport`) |
 | `npx tsx scripts/shot-units.ts` | Every unit class on the board, both sides, close up, light and dark (no server) |
@@ -215,6 +217,24 @@ battle's `?` overlay and the How to play page; the handling is `onKey` in
 alone on a focused button or link. Key hints are hidden on touch screens and
 narrow windows.
 
+**Guests join one game by its invite link, and can reach nothing else.**
+The owner wanted people without an account to be able to play from a link,
+without opening the invite-only sign-up. The waiting room's link is
+`/g/<id>/invite/<token>` (`games.invite_token`, 144 random bits, made when
+first shown, replaced by "New link", which kills older links; it is read
+from the database, never the game cache, which predates it). A signed-in
+visitor gets the ordinary Join button. Anyone else gets a display name
+field: that makes a `users` row with `is_guest`, `guest_game_id`, an address
+under `.invalid` and no usable password (`signIn` refuses guests, like
+bots), a session, and the open seat. A full or started game's link turns
+guests away. The restriction is one `onRequest` hook (`guestGuard`,
+`src/guest.ts`) over the allow-list in `src/guest-paths.ts`: their game's
+page, its socket, the invite link, `/static/`, `/how-to-play` and sign-out.
+Pages redirect to their game, everything else is 403, so **a new route is
+closed to guests until it is listed there**. Guests show as "Name (guest)";
+signing out ends a guest's access for good. `unseed` removes the guests of
+demo games.
+
 **Theme on the account**, stamped into `<html>` at render: no flash. The
 battle page re-reads the palette when the device scheme changes.
 
@@ -351,7 +371,7 @@ the server after `seed`/`unseed`, or it serves games that no longer exist.
 
 1. `npm run typecheck`, `npm test`, and the simulator if rules or the bot moved.
 2. Restart the server; `npm run unseed && npm run seed`; restart again.
-3. `npm run test:flow`, `npm run test:editor`, `npm run test:keys`, `npm run audit:mobile`,
+3. `npm run test:flow`, `npm run test:editor`, `npm run test:keys`, `npm run test:guest`, `npm run audit:mobile`,
    `npm run shot` — and look at the images. All at zero warnings.
 4. Update this file in the same change.
 

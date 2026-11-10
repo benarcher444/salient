@@ -49,12 +49,14 @@ function newGameId(): string {
 
 function loadPlayers(gameId: string): PlayerInfo[] {
   return db
-    .select({ seat: gamePlayers.seat, userId: gamePlayers.userId, name: users.displayName, isBot: users.isBot })
+    .select({ seat: gamePlayers.seat, userId: gamePlayers.userId, name: users.displayName, isBot: users.isBot, isGuest: users.isGuest })
     .from(gamePlayers)
     .innerJoin(users, eq(users.id, gamePlayers.userId))
     .where(eq(gamePlayers.gameId, gameId))
     .orderBy(asc(gamePlayers.seat))
-    .all();
+    .all()
+    // Guests are marked wherever names show: the scoreboard, the waiting room.
+    .map(({ isGuest, ...p }) => ({ ...p, name: isGuest ? `${p.name} (guest)` : p.name }));
 }
 
 /**

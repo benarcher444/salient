@@ -13,6 +13,8 @@ import { runMigrations } from "./db/migrate.js";
 import { resumeBots } from "./games.js";
 import { authRoutes } from "./routes/auth.js";
 import { gameRoutes } from "./routes/games.js";
+import { guestGuard } from "./guest.js";
+import { inviteRoutes } from "./routes/invites.js";
 import { mapRoutes } from "./routes/maps.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { layout } from "./views/layout.js";
@@ -34,6 +36,9 @@ await app.register(cookie);
 await app.register(formbody);
 await app.register(websocket);
 
+// Guests may reach their one game and nothing else: checked before every route.
+app.addHook("onRequest", guestGuard);
+
 // Bundled browser code, before the static handler so /static/build/* is ours.
 app.get("/static/build/:name", async (request, reply) => {
   const code = await bundle((request.params as { name: string }).name);
@@ -51,6 +56,7 @@ await app.register(fastifyStatic, {
 
 authRoutes(app);
 gameRoutes(app);
+inviteRoutes(app);
 mapRoutes(app);
 settingsRoutes(app);
 

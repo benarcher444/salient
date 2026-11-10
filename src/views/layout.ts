@@ -45,7 +45,10 @@ export interface LayoutOptions {
 
 export function layout(o: LayoutOptions): Html {
   const theme: Theme = o.user?.theme ?? "auto";
-  const nav = o.user
+  // A guest has one game and no account: no navigation, just a way out.
+  const guest = o.user?.isGuest ? o.user : null;
+  const home = guest?.guestGameId ? `/g/${esc(guest.guestGameId)}` : "/";
+  const nav = o.user && !guest
     ? NAV.map(
         (n) =>
           `<a href="${n.href}" class="nav-link${o.active === n.key ? " active" : ""}"${o.active === n.key ? ' aria-current="page"' : ""}>${n.icon}<span>${esc(n.label)}</span></a>`,
@@ -54,11 +57,17 @@ export function layout(o: LayoutOptions): Html {
   const chrome = o.bare
     ? o.body
     : `<header class="topbar">
-  <a class="brand" href="/">${icons.logo}<span>${APP_NAME}</span></a>
-  ${o.user ? `<nav class="topnav">${nav}</nav><span class="who">${esc(o.user.displayName)}</span>` : ""}
+  <a class="brand" href="${home}">${icons.logo}<span>${APP_NAME}</span></a>
+  ${
+    guest
+      ? `<span class="who">${esc(guest.displayName)} · guest</span><form method="post" action="/logout"><button class="btn btn-ghost btn-sm" type="submit" title="As a guest, signing out ends your access to this game">Sign out</button></form>`
+      : o.user
+        ? `<nav class="topnav">${nav}</nav><span class="who">${esc(o.user.displayName)}</span>`
+        : ""
+  }
 </header>
 <main class="page">${o.body}</main>
-${o.user ? `<nav class="mobile-bar">${nav}</nav>` : ""}`;
+${o.user && !guest ? `<nav class="mobile-bar">${nav}</nav>` : ""}`;
 
   return `<!doctype html>
 <html lang="en"${themeAttr(theme)}>
@@ -71,7 +80,7 @@ ${o.user ? `<nav class="mobile-bar">${nav}</nav>` : ""}`;
 <link rel="stylesheet" href="/static/styles.css">
 ${o.head ?? ""}
 </head>
-<body class="${o.bare ? "bare" : o.user ? "with-nav" : ""}">
+<body class="${o.bare ? "bare" : o.user && !guest ? "with-nav" : ""}">
 ${chrome}
 ${o.scripts ?? ""}
 </body>
