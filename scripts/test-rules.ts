@@ -15,7 +15,7 @@ import { UNITS } from "../src/game/units.js";
 import { viewFor } from "../src/game/view.js";
 import { RuleError, type Action, type GameState, type MapDef, type Point, type Unit, type UnitKind } from "../src/game/types.js";
 import { RULES } from "../src/game/constants.js";
-import { baseTiles } from "../src/game/visibility.js";
+import { baseTiles, spawnTiles } from "../src/game/visibility.js";
 import { FILE_TUNING, TuningError, checkTuning, withTuning, type Tuning } from "../src/game/tuning.js";
 
 let failures = 0;
@@ -442,6 +442,9 @@ section("Upkeep: captures, income, healing");
   check("which pays out the same round", s.seats[1]!.gold === RULES.startGold + 2 * RULES.baseIncome + 25, `${s.seats[1]!.gold}`);
   s = resolve(s, [], []).state;
   check("a second round flips the post to them", s.postOwners[0] === 1);
+  const mine = spawnTiles(getMap("sites"), s, 1);
+  check("a held post is a spawn tile", mine.some((p) => p.x === 5 && p.y === 5));
+  check("the tiles beside it are not", !mine.some((p) => Math.max(Math.abs(p.x - 5), Math.abs(p.y - 5)) === 1));
 
   s.units = [unit(7, 0, "rifleman", 2, 2, { hp: 50 }), unit(8, 0, "rifleman", 6, 2, { hp: 50 }), unit(9, 0, "engineer", 6, 3)];
   s = resolve(s, [], []).state;

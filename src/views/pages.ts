@@ -183,7 +183,7 @@ export function rulesPage(user: User | null): Html {
     <ul>
       <li><strong>Walls</strong> stop movement and sight. <strong>Windows and low walls</strong> stop movement but you can see and shoot through them. Doorways are open.</li>
       <li><strong>Rock</strong> blocks both; <strong>water</strong> and <strong>crates</strong> block movement only; <strong>woods</strong> cost double to walk through and give cover.</li>
-      <li><strong>Command posts</strong> are captured by ending a round on them: an enemy's becomes neutral, a neutral one becomes yours. You can deploy on and beside posts you hold. Posts are forward spawn points; they don't keep you in the game on their own.</li>
+      <li><strong>Command posts</strong> are captured by ending a round on them: an enemy's becomes neutral, a neutral one becomes yours. You can deploy on a post you hold (on the post's own tile only). Posts are forward spawn points; they don't keep you in the game on their own.</li>
       <li><strong>Base tiles</strong> are captured the same way, one tile at a time, and become spawn points for whoever holds them. A unit standing on its own base tile blocks the capture.</li>
       <li><strong>Income sites</strong> pay +25 gold a round, on top of everyone's +${RULES.baseIncome}. Only <strong>engineers</strong> can capture them.</li>
       <li><strong>Fog of war:</strong> you only see what your units and the base tiles and posts you hold can see.</li>

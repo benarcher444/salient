@@ -1,6 +1,6 @@
 // Fog of war and spawn points: what each seat can see, and where it can deploy.
 import { RULES } from "./constants.js";
-import { DIRS, distance, isPassable, stepOpen } from "./grid.js";
+import { distance } from "./grid.js";
 import { traceLine, visibleFrom } from "./los.js";
 import { UNITS, hasTrait, stealthRange } from "./units.js";
 import type { GameState, MapDef, Point, Seat, Unit } from "./types.js";
@@ -71,14 +71,10 @@ export function spawnTiles(map: MapDef, state: SpawnState, seat: Seat): Point[] 
   baseTiles(map, state.seatCount).forEach((p, i) => {
     if (state.baseOwners[i] === seat) add(p);
   });
+  // A post is a spawn point on its own tile only, not the tiles round it.
   state.postOwners.forEach((owner, i) => {
     const p = map.posts[i];
-    if (owner !== seat || !p) return;
-    add(p);
-    for (const d of [DIRS[0]!, DIRS[2]!, DIRS[4]!, DIRS[6]!]) {
-      const n = { x: p.x + d.x, y: p.y + d.y };
-      if (isPassable(map, n.x, n.y) && stepOpen(map, p, n)) add(n);
-    }
+    if (owner === seat && p) add(p);
   });
   return tiles;
 }

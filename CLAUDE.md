@@ -209,7 +209,8 @@ captured exactly like a command post, by the same `capture` helper in
 (theirs → neutral → yours). A captured base tile is a spawn tile for its new
 owner; a lost one is not for the old. A side is out when it owns **no base
 tiles and has no units** (`knockedOut`): checked at round end, and at once
-when its last unit is shot. Command posts don't keep you in. Last side
+when its last unit is shot. Command posts don't keep you in. A held post is a spawn tile on its own tile
+only, not the tiles round it (the owner's call). Last side
 standing wins; round 30 is a draw. Bases are small (4 tiles on the built-in
 maps, at most 6 in the editor) so every tile matters.
 
