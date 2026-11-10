@@ -1,4 +1,4 @@
-# Salient — handbook
+# Salient â€” handbook
 
 This is the project's own handbook: what the app is, the decisions behind it,
 the traps found while building it, and how to check a change. Read it before
@@ -56,7 +56,7 @@ None of its code did.
 | `npm run db:generate` | Generate a migration after editing `src/db/schema.ts` |
 
 Browser suites and screenshots need the server running and `npm run seed`
-done. **Restart the server after any change under `src/`** — it does not
+done. **Restart the server after any change under `src/`** â€” it does not
 reload, and a pass run against the old process verifies the old code.
 `public/` and the browser bundle are served fresh.
 
@@ -133,7 +133,7 @@ sets the facing at the pointer and deselects (right-clicking any selected
 unit or deployment does the same); a left click while aiming is an ordinary
 click. Touch has no right click, so there the tap after a route sets the
 facing (`tap` gets the `pointerType`). Enter never starts aiming, or the
-keyboard would need a second press. Tapping a ghost or a deployment aims it; Q/E turn 15° (Shift 45°), R points at the
+keyboard would need a second press. Tapping a ghost or a deployment aims it; Q/E turn 15Â° (Shift 45Â°), R points at the
 cursor, and the panel's compass has the eight quick facings round an Aim
 button.
 
@@ -156,7 +156,7 @@ way, since custom maps are not in the bundle.
 
 **The editor works through four primitives and the symmetry transforms.**
 Every tool is built from `setTerrain`, `setEdge` and `placeSite`, each applied
-once per image from `symmetryTransforms()` — the same rotations the built-in
+once per image from `symmetryTransforms()` â€” the same rotations the built-in
 maps are drawn with, so "mirror" in the editor means exactly what it means in
 `maps.ts`. A base painted for seat s puts image k in seat s+k. A stroke is
 one undo step (snapshot at pointer-down, compared at pointer-up). Edits
@@ -212,7 +212,7 @@ a healer or officer under the cursor or selected shows the square its help
 reaches; a sniper's arc includes its scope's long strip; unarmed units have
 no arc. The battle board always fills its area (`Camera` with `fill`): no
 zooming out past it and no panning off the edge, so there is never an empty
-frame round the map. The editor keeps the whole-map fit.
+frame round the map. The editor keeps the whole-map fit. Under the side panel a minimap (`drawMinimap`) shows the whole map, the fog, the units this player can see and a box for the board's view; clicking or dragging it moves the view. Phones hide it: the bottom sheet has no room.
 
 **The whole battle can be played from the keyboard.** A cursor square is
 always on the board (`s.hover`; the mouse moves it too and leaving the board
@@ -257,7 +257,7 @@ tile has an owner (`state.baseOwners`, indexed by `baseTiles(map,
 seatCount)`: the playing seats' bases flattened in seat order) and is
 captured exactly like a command post, by the same `capture` helper in
 `endRound`: a unit ending a round on it moves it one step towards its side
-(theirs → neutral → yours). A captured base tile is a spawn tile for its new
+(theirs â†’ neutral â†’ yours). A captured base tile is a spawn tile for its new
 owner; a lost one is not for the old. A side is out when it owns **no base
 tiles and has no units** (`knockedOut`): checked at round end, and at once
 when its last unit is shot. Command posts don't keep you in. A held post is a spawn tile on its own tile
@@ -292,14 +292,14 @@ kills outright); heavy (`explosive`: a shell bursts on the target's tile hit
 or miss, hurting everyone round it, either side, not through walls);
 healer (+5 to allies within 2 tiles, even under fire); officer (a rifleman
 whose neighbours within 2 shoot better; `previewShot` needs the units list to
-see it, so every caller passes the units it knows). Hits vary ±10%
+see it, so every caller passes the units it knows). Hits vary Â±10%
 (`damageVariance`, a second roll) and the panel and reticles show the hit
 chance and the damage range before firing.
 
 **Games from before version 2 are upgraded, not refused.** Their snapshot has
 no `version`: `upgradeSnapshot` keeps their numbers where the field still
 exists and takes the rest (new classes, new fields, all traits) from the
-files; `games.ts` converts their logged facings (eighths × 45) and the
+files; `games.ts` converts their logged facings (eighths Ã— 45) and the
 breacher to the shotgun as it replays. Their outcomes can still differ, since
 the rules code changed under them.
 
@@ -319,7 +319,7 @@ the player pans or zooms (`board.userMoved`).
 to it and their white glyph vanished. Badges now use `var(--seat, slate)`.
 
 **Banners fire late.** Phase banners wait for the update's animation, by which
-time another update may have arrived; "Round 3 · Plan your moves" showed during
+time another update may have arrived; "Round 3 Â· Plan your moves" showed during
 the attack phase. Each banner now checks the view it was made for is still
 current.
 
@@ -339,14 +339,14 @@ them; keep it.
 
 **Stopping a background `npx tsx` task can leave the server running.** The
 wrapper dies, the node process keeps the port, and a "restarted" server fails
-with EADDRINUSE while the old code goes on answering — so a suite tests the
+with EADDRINUSE while the old code goes on answering â€” so a suite tests the
 old code and reports a 404 for a route that exists. Kill by the port's PID
 (`netstat -ano`) and check the port is free before starting again.
 
 **Fonts a fraction of a pixel tall render badly on canvas.** Labels on the
 board are drawn in screen pixels, not tile units, for that reason.
 
-**Fog at one pixel per tile looks like clouds.** Smoothing a 25×17 image up to
+**Fog at one pixel per tile looks like clouds.** Smoothing a 25Ã—17 image up to
 the board smears each tile across its neighbours. Four pixels per tile softens
 only the edges.
 
@@ -385,7 +385,7 @@ the server after `seed`/`unseed`, or it serves games that no longer exist.
 1. `npm run typecheck`, `npm test`, and the simulator if rules or the bot moved.
 2. Restart the server; `npm run unseed && npm run seed`; restart again.
 3. `npm run test:flow`, `npm run test:editor`, `npm run test:keys`, `npm run test:guest`, `npm run audit:mobile`,
-   `npm run shot` — and look at the images. All at zero warnings.
+   `npm run shot` â€” and look at the images. All at zero warnings.
 4. Update this file in the same change.
 
 ## Deployment
@@ -394,7 +394,7 @@ Live at **https://salient.91-99-202-188.sslip.io** since 2026-11-08, first
 deployed by hand. GitHub Actions deploys every push to `main` once the
 `DEPLOY_ENABLED` repository variable is `true`, the deploy key is on the
 server and the repository is public (the server pulls anonymously). The path
-is the playbook's, steps 1–7.
+is the playbook's, steps 1â€“7.
 
 The first install could not clone: the repository was private, so GitHub
 asked the server for a login. It went up as a `git bundle` copied over SSH,

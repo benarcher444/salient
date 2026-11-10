@@ -78,9 +78,33 @@ function refresh() {
   }
 }
 
+const minimap = document.getElementById("minimap") as HTMLCanvasElement | null;
+
 function frame(now: number) {
   board.draw(now);
+  // Hidden on a phone (no layout box): nothing to draw.
+  if (minimap?.offsetParent) board.drawMinimap(minimap, now);
   requestAnimationFrame(frame);
+}
+
+// Click or drag on the minimap to move the board's view there.
+if (minimap) {
+  let dragging = false;
+  const moveTo = (e: PointerEvent) => {
+    const r = minimap.getBoundingClientRect();
+    board.centreOn(board.minimapToWorld(minimap, e.clientX - r.left, e.clientY - r.top));
+    board.userMoved = true;
+    tooltip.hidden = true;
+  };
+  minimap.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    minimap.setPointerCapture(e.pointerId);
+    moveTo(e);
+  });
+  minimap.addEventListener("pointermove", (e) => dragging && moveTo(e));
+  const stop = () => (dragging = false);
+  minimap.addEventListener("pointerup", stop);
+  minimap.addEventListener("pointercancel", stop);
 }
 
 let bannerTimer = 0;

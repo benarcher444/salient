@@ -403,7 +403,11 @@ body.bare { height: 100dvh; overflow: hidden; }
 .board-banner.tone-win { border-color: var(--ok-border); box-shadow: 0 0 0 4px var(--ok-soft), var(--shadow-lg); }
 .board-banner.tone-lose { border-color: var(--danger-border); }
 
-.panel { background: var(--surface); border-left: 1px solid var(--border); overflow-y: auto; min-height: 0; display: flex; flex-direction: column; }
+.side { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-left: 1px solid var(--border); }
+.panel { background: var(--surface); overflow-y: auto; min-height: 0; flex: 1; display: flex; flex-direction: column; }
+/* The whole map, small, fixed under the panel: click or drag it to move the view. */
+.minimap-wrap { flex: none; padding: 10px 12px 12px; border-top: 1px solid var(--border); background: var(--surface-2); }
+#minimap { display: block; width: 100%; height: 190px; border-radius: 8px; cursor: pointer; touch-action: none; }
 .panel-section { padding: 14px 16px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
 .panel-section:last-child { border-bottom: 0; }
 .panel-h { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-faint); font-weight: 750; }
@@ -484,7 +488,9 @@ body.bare { height: 100dvh; overflow: hidden; }
   .scoreboard { order: 3; flex-basis: 100%; margin-left: 0; }
   .score { padding: 4px 8px; }
   .battle-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
-  .panel { border-left: 0; border-top: 1px solid var(--border); max-height: 44dvh; }
+  .side { border-left: 0; border-top: 1px solid var(--border); max-height: 44dvh; }
+  /* No room in a phone's bottom sheet: pan the board itself. */
+  .minimap-wrap { display: none; }
   .zoom-controls { right: 8px; bottom: 8px; }
 }
 

@@ -41,7 +41,12 @@ export function battlePage(user: User, live: LiveGame, seat: number | null): Htm
         <button class="btn btn-icon" id="zoom-fit" type="button" aria-label="Fit map to screen">${icons.target}</button>
       </div>
     </div>
-    <aside class="panel" id="panel" aria-live="polite"></aside>
+    <aside class="side">
+      <div class="panel" id="panel" aria-live="polite"></div>
+      <div class="minimap-wrap">
+        <canvas id="minimap" aria-label="Minimap: click or drag to move the view"></canvas>
+      </div>
+    </aside>
   </div>
 </div>`;
   return layout({

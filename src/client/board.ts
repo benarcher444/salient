@@ -105,6 +105,81 @@ export class Board {
     this.camera.clamp(this.w, this.h);
   }
 
+  /** Centre the view on a point of the map (in tiles), as far as the edges allow. */
+  centreOn(p: { x: number; y: number }) {
+    this.camera.x = p.x - this.w / this.camera.scale / 2;
+    this.camera.y = p.y - this.h / this.camera.scale / 2;
+    this.camera.clamp(this.w, this.h);
+  }
+
+  /** Where the map sits inside the minimap canvas: CSS pixels per tile and the offset. */
+  private minimapFit(target: HTMLCanvasElement) {
+    const r = target.getBoundingClientRect();
+    const k = Math.min(r.width / this.s.map.width, r.height / this.s.map.height);
+    return { r, k, ox: (r.width - this.s.map.width * k) / 2, oy: (r.height - this.s.map.height * k) / 2 };
+  }
+
+  /** The map point (in tiles) under a point of the minimap (CSS pixels from its corner). */
+  minimapToWorld(target: HTMLCanvasElement, cx: number, cy: number) {
+    const { k, ox, oy } = this.minimapFit(target);
+    return { x: (cx - ox) / k, y: (cy - oy) / k };
+  }
+
+  /**
+   * The whole map, small: terrain, fog, every unit this player can see as a
+   * dot in its side's colour, and a box round the part the board shows.
+   */
+  drawMinimap(target: HTMLCanvasElement, now: number) {
+    const s = this.s;
+    const { r, k, ox, oy } = this.minimapFit(target);
+    if (!r.width || !r.height) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.round(r.width * dpr);
+    const H = Math.round(r.height * dpr);
+    if (target.width !== W || target.height !== H) {
+      target.width = W;
+      target.height = H;
+    }
+    const g = target.getContext("2d")!;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, r.width, r.height);
+    if (!this.art) this.repaint();
+    g.translate(ox, oy);
+    g.scale(k, k);
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = "high";
+    g.drawImage(this.art!, 0, 0, s.map.width, s.map.height);
+    const v = s.view;
+    if (v) {
+      g.globalAlpha = 0.58;
+      g.drawImage(this.fog, 0, 0, s.map.width, s.map.height);
+      g.globalAlpha = 1;
+      for (const u of v.units) {
+        const p = this.anim.pose(u, now);
+        if (p.alpha <= 0) continue;
+        g.fillStyle = this.pal.seats[u.seat]!;
+        g.strokeStyle = this.pal.paper;
+        g.lineWidth = 1.5 / k;
+        g.beginPath();
+        g.arc(p.x, p.y, Math.max(0.5, 3.2 / k), 0, Math.PI * 2);
+        g.fill();
+        g.stroke();
+      }
+    }
+    // The board's view, in ink over a paper halo so it reads on any terrain.
+    const cam = this.camera;
+    const vw = this.w / cam.scale;
+    const vh = this.h / cam.scale;
+    for (const [width, colour] of [
+      [4, alpha(colourHex(this.pal.paper), 0.85)],
+      [2, this.pal.ink],
+    ] as const) {
+      g.strokeStyle = colour;
+      g.lineWidth = width / k;
+      g.strokeRect(cam.x, cam.y, vw, vh);
+    }
+  }
+
   /** Pan just enough to keep a tile, and a tile around it, on screen. True if the view moved. */
   reveal(p: Point): boolean {
     const cam = this.camera;
