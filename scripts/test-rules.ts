@@ -772,11 +772,16 @@ section("Upkeep: captures, income, healing");
 {
   board("timeout");
   const s = stateOn("timeout", [unit(1, 0, "rifleman", 0, 0)]);
-  s.round = RULES.roundLimit;
-  // Seat 0 is well ahead: it holds one of seat 1's base tiles too. Still a draw.
-  s.baseOwners[s.baseOwners.indexOf(1)] = 0;
+  check("there is no round limit in the files", RULES.roundLimit === 0, String(RULES.roundLimit));
+  s.round = 500;
   const r = resolve(s, [], []).state;
-  check("at the round limit it's a draw, however far ahead anyone is", r.phase === "over" && r.winner === null, `${r.phase} ${r.winner}`);
+  check("so round 500 just goes on", r.phase === "planning" && r.round === 501, `${r.phase} ${r.round}`);
+  // An older game keeps the limit it was made with (its snapshot says 30).
+  const old = { ...FILE_TUNING, rules: { ...FILE_TUNING.rules, roundLimit: 30 } };
+  const t = stateOn("timeout", [unit(1, 0, "rifleman", 0, 0)]);
+  t.round = 30;
+  const ended = withTuning(old, () => resolve(t, [], []).state);
+  check("an older game with a limit still ends at it", ended.phase === "over" && ended.winner === null, `${ended.phase} ${ended.winner}`);
 }
 
 // ---------------------------------------------------------------------------

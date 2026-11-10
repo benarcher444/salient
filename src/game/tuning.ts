@@ -157,7 +157,7 @@ const RULE_NUMBERS: NumberRule[] = [
   ["critChance", 0, 1],
   ["critMultiplier", 0, 100],
   ["damageVariance", 0, 1],
-  ["roundLimit", 1, 1000, true],
+  ["roundLimit", 0, 1000, true],
   ["baseCaptureRounds", 1, 100, true],
   ["engineerBaseCaptureRounds", 1, 100, true],
   ["siteSight", 0, 40],

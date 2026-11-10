@@ -2,7 +2,9 @@
 // games run to the end without the rules or the bots getting stuck, and a
 // first look at balance (does one seat win too often, how long games last,
 // what gets bought and how often shots land).
-//   npx tsx scripts/simulate.ts [--games=50] [--map=crossroads] [--seats=2]
+//   npx tsx scripts/simulate.ts [--games=50] [--map=crossroads] [--seats=2] [--rounds=60]
+// Real games may have no round limit; a simulated one stops at --rounds and
+// is reported as unfinished (not a problem: bots can stalemate).
 import { chooseAction } from "../src/game/bot.js";
 import { MAPS } from "../src/game/maps.js";
 import { streamFor } from "../src/game/rng.js";
@@ -13,7 +15,8 @@ import { RuleError, type Action, type UnitKind } from "../src/game/types.js";
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split("=")[1];
 const games = Number(arg("games") ?? 50);
 const maps = arg("map") ? MAPS.filter((m) => m.id === arg("map")) : MAPS;
-const MAX_ACTIONS = 5000;
+const MAX_ACTIONS = 20_000;
+const ROUND_CAP = Number(arg("rounds") ?? 60);
 
 let problems = 0;
 for (const map of maps) {
@@ -33,7 +36,7 @@ for (const map of maps) {
     const botRandom = streamFor(`${seed}-bots`, 0);
     let state = newGame(map.id, seats);
     let seq = 0;
-    while (state.phase !== "over" && seq < MAX_ACTIONS) {
+    while (state.phase !== "over" && state.round <= ROUND_CAP && seq < MAX_ACTIONS) {
       let acted = false;
       for (let seat = 0; seat < seats && state.phase !== "over"; seat++) {
         const choice = chooseAction(viewFor(state, seat), botRandom);
@@ -65,8 +68,8 @@ for (const map of maps) {
         break;
       }
     }
-    if (state.phase !== "over") stuck++;
-    const key = state.winner === null ? "draw" : `seat ${state.winner}`;
+    if (state.phase !== "over" && state.round <= ROUND_CAP) stuck++;
+    const key = state.phase !== "over" ? `unfinished at ${ROUND_CAP}` : state.winner === null ? "draw" : `seat ${state.winner}`;
     wins.set(key, (wins.get(key) ?? 0) + 1);
     rounds.push(state.round);
   }

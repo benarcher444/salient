@@ -7,7 +7,7 @@
   "critChance": 0.1,
   "critMultiplier": 1.5,
   "damageVariance": 0.1,
-  "roundLimit": 30,
+  "roundLimit": 0,
   "baseCaptureRounds": 2,
   "engineerBaseCaptureRounds": 1,
   "siteSight": 2,

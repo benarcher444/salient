@@ -556,7 +556,7 @@ function endRound(map: MapDef, state: GameState, events: GameEvent[]) {
   if (checkWinner(state, events)) return;
 
   // Nobody took the field in time: a draw.
-  if (state.round >= RULES.roundLimit) {
+  if (RULES.roundLimit > 0 && state.round >= RULES.roundLimit) {
     finish(state, null, events);
     return;
   }

@@ -279,7 +279,9 @@ owner; a lost one is not for the old. A side is out when it owns **no base
 tiles and has no units** (`knockedOut`): checked at round end, and at once
 when its last unit is shot. Command posts don't keep you in. A held post is a spawn tile on its own tile
 only, not the tiles round it (the owner's call). Last side
-standing wins; round 30 is a draw. Bases are small (4 tiles on the built-in
+standing wins. There is no round limit (the owner's call: a draw at round 30
+robbed a player who had wiped out the enemy's units); `roundLimit` 0 means
+none, and games made before keep the 30 in their snapshot. Bases are small (4 tiles on the built-in
 maps, at most 6 in the editor) so every tile matters.
 
 **Balance numbers live in `tuning/`, as JSON, and every game snapshots
