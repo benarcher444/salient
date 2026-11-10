@@ -99,7 +99,7 @@ ${notice ? `<p class="alert alert-ok" role="status">${esc(notice)}</p>` : ""}
         </fieldset>
         <label class="field"><span>Players</span>
           <select class="select" name="seats" id="seats">
-            <option value="2">2 players</option><option value="3">3 players</option><option value="4">4 players</option>
+            ${Array.from({ length: (MAPS[0]?.seats ?? 2) - 1 }, (_, i) => `<option value="${i + 2}">${i + 2} players</option>`).join("")}
           </select>
         </label>
         <button class="btn btn-primary btn-lg" type="submit">${icons.plus}<span>Create game</span></button>
@@ -186,7 +186,7 @@ export function rulesPage(user: User | null): Html {
     <h2>Shooting</h2>
     <p>A unit can shoot what is inside its <strong>firing arc</strong> (the wedge in front of it), within range, with a clear line. You see the chance to hit before you fire. Accuracy falls off past a unit's best range. A target behind cover — a crate, a low wall or window, or standing in woods — is harder to hit; cover right next to the shooter costs nothing.</p>
     <p>Before you fire you see the chance to hit and the damage a hit will do: damage varies by up to ${Math.round(RULES.damageVariance * 100)} per cent either way. ${Math.round(RULES.critChance * 100)} per cent of hits are critical, for ${RULES.critMultiplier}× more.</p>
-    <p><strong>Facing matters.</strong> A unit can face any direction. Shots into its side do ${RULES.flank.side}× damage and into its back ${RULES.flank.rear}×. To aim a unit, click where it should move and it turns to follow the pointer until you click again; or tap its ghost (or a deployment) to aim it, use the compass in the panel, or Q and E.</p>
+    <p><strong>Facing matters.</strong> A unit can face any direction. Shots into its side do ${RULES.flank.side}× damage and into its back ${RULES.flank.rear}×. With a mouse, left-click where a unit should move: it then turns to follow the pointer, and a right click sets its facing there and deselects it. Right-clicking with a unit or deployment selected always points it at the pointer. On a touch screen, tap where it should face instead. The compass in the panel and Q and E turn it too.</p>
     <h2>The map</h2>
     <ul>
       <li><strong>Walls</strong> stop movement and sight. <strong>Windows and low walls</strong> stop movement but you can see and shoot through them. Doorways are open.</li>

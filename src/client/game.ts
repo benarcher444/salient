@@ -537,22 +537,29 @@ function cursorTo(p: Point) {
 }
 
 attachGestures(canvas, board.camera, {
-  tap: (sx, sy, button) => {
+  tap: (sx, sy, button, pointerType) => {
     const p = board.tileAt(sx, sy);
-    if (s.aiming) {
-      // A tap sets the aim where the pointer is; a right click puts it back.
-      if (button === 2) cancelAim();
-      else {
-        faceToward(board.camera.toWorld(sx, sy));
-        s.aiming = null;
-      }
-      refresh();
-      return;
-    }
+    const world = board.camera.toWorld(sx, sy);
+    // With a mouse: left click moves (and the unit then turns to follow the
+    // pointer), right click sets the facing there and deselects. A touch
+    // screen has no right click, so there the tap after a route sets it.
     if (button === 2) {
+      if (canPlan(s)) faceToward(world);
+      s.aiming = null;
       s.selected = null;
       refresh();
       return;
+    }
+    if (s.aiming) {
+      if (pointerType !== "mouse") {
+        faceToward(world);
+        s.aiming = null;
+        refresh();
+        return;
+      }
+      // A left click while aiming is an ordinary click (a new route, another
+      // unit); the facing keeps what the pointer last set.
+      s.aiming = null;
     }
     if (p) onTap(p, true);
   },

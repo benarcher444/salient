@@ -122,10 +122,13 @@ may switch targets between them.
 
 **A facing is any whole degree, 0..359** (0 north, clockwise). It was one of
 eight; the owner wanted to point anywhere. Whole degrees keep the action log
-exact. In the battle, clicking a route's end leaves the unit turning to
-follow the pointer until the next click (`s.aiming`, mouse only; Enter does
-not, or the keyboard would need a second press); tapping a ghost or a
-deployment aims it the same way; Q/E turn 15° (Shift 45°), R points at the
+exact. In the battle (the owner's scheme), a left click sets a route and
+leaves the unit turning to follow the pointer (`s.aiming`); a right click
+sets the facing at the pointer and deselects (right-clicking any selected
+unit or deployment does the same); a left click while aiming is an ordinary
+click. Touch has no right click, so there the tap after a route sets the
+facing (`tap` gets the `pointerType`). Enter never starts aiming, or the
+keyboard would need a second press. Tapping a ghost or a deployment aims it; Q/E turn 15° (Shift 45°), R points at the
 cursor, and the panel's compass has the eight quick facings round an Aim
 button.
 

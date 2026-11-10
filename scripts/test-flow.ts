@@ -46,9 +46,9 @@ async function player(email: string) {
   return { page, errors, context };
 }
 
-async function tapTile(page: Page, x: number, y: number) {
+async function tapTile(page: Page, x: number, y: number, button: "left" | "right" = "left") {
   const p = await page.evaluate(`window.__salient.screenOf(${x}, ${y})`) as { x: number; y: number };
-  await page.mouse.click(p.x, p.y);
+  await page.mouse.click(p.x, p.y, { button });
 }
 
 async function waitFor(page: Page, what: string, test: () => Promise<boolean>, timeout = 10_000) {
@@ -102,9 +102,12 @@ async function marchAll(page: Page, goal: { x: number; y: number }) {
     if (best) {
       chosen.push(`${best.x},${best.y}`);
       await tapTile(page, best.x, best.y);
-      if (!aimChecked) check("setting a route with the mouse starts aiming", (await page.textContent("#panel"))?.includes("Aiming") ?? false);
-      await tapTile(page, goal.x, goal.y);
-      if (!aimChecked) check("the next click sets the facing and stops aiming", !((await page.textContent("#panel"))?.includes("Aiming") ?? true));
+      if (!aimChecked) check("a left click sets the route and the unit then follows the pointer", (await page.textContent("#panel"))?.includes("Aiming") ?? false);
+      await tapTile(page, goal.x, goal.y, "right");
+      if (!aimChecked) {
+        const panel = (await page.textContent("#panel")) ?? "";
+        check("a right click sets the facing and deselects", !panel.includes("Aiming") && !panel.includes("Moving"), panel.slice(0, 120));
+      }
       aimChecked = true;
     }
     await page.keyboard.press("Escape"); // deselect

@@ -73,6 +73,8 @@ export function renderTopBar(s: ClientState) {
   } else gold.hidden = true;
 }
 
+const AIM_HINT = "Aiming: right-click where it should face (on a touch screen, tap).";
+
 /** Gold this player gets at the end of each round: the base amount plus its income sites. */
 function incomePerRound(s: ClientState): number {
   const v = s.view!;
@@ -181,7 +183,7 @@ function planningBlock(s: ClientState): string {
   ${unitHeader(s, u)}
   <p class="order-line">${what}, facing ${facingName(facing)} (${facing}°).</p>
   <div class="facing-row"><span class="faint small">Face</span>${compass(s, facing)}</div>
-  <p class="faint small">${s.aiming ? "Aiming: tap where it should face." : "Tap a highlighted tile to move there, then its ghost to aim. Tap the unit again to deselect."}</p>
+  <p class="faint small">${s.aiming ? AIM_HINT : "Click a highlighted tile to move there; it then turns to follow the pointer. Right-click to set its facing."}</p>
   ${order ? `<button class="btn btn-ghost btn-sm" data-action="clear-order" data-unit="${u.id}" type="button">Clear order</button>` : ""}
 </div>`);
     }
@@ -201,7 +203,7 @@ function planningBlock(s: ClientState): string {
   <div class="unit-head"><span class="unit-badge">${glyph(sp.kind)}</span><div><h3>${esc(UNITS[sp.kind].name)}</h3><p class="faint small">Deploying · ${UNITS[sp.kind].cost} gold</p></div></div>
   <p class="faint small">${esc(UNITS[sp.kind].role)}</p>
   <div class="facing-row"><span class="faint small">Face</span>${compass(s, sp.facing)}</div>
-  <p class="faint small">${s.aiming ? "Aiming: tap where it should face." : `Facing ${facingName(sp.facing)} (${sp.facing}°). Tap it again to aim.`}</p>
+  <p class="faint small">${s.aiming ? AIM_HINT : `Facing ${facingName(sp.facing)} (${sp.facing}°). Right-click where it should face, or click it again to aim.`}</p>
   <button class="btn btn-ghost btn-sm" data-action="cancel-spawn" type="button">Cancel deployment</button>
 </div>`);
     }

@@ -82,7 +82,8 @@ export class Camera {
 }
 
 export interface GestureHandlers {
-  tap(sx: number, sy: number, button: number): void;
+  /** A press that barely moved. `pointerType` is "mouse", "touch" or "pen". */
+  tap(sx: number, sy: number, button: number, pointerType: string): void;
   hover(sx: number, sy: number | null): void;
   changed(): void;
 }
@@ -144,7 +145,7 @@ export function attachGestures(canvas: HTMLCanvasElement, camera: Camera, h: Ges
     if (pointers.size < 2) pinchDistance = 0;
     if (wasOnly && !moved && downAt && e.type === "pointerup") {
       const p = local(e);
-      h.tap(p.x, p.y, e.button);
+      h.tap(p.x, p.y, e.button, e.pointerType);
     }
     if (pointers.size === 0) downAt = null;
   };
