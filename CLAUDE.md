@@ -367,6 +367,17 @@ board are drawn in screen pixels, not tile units, for that reason.
 the board smears each tile across its neighbours. Four pixels per tile softens
 only the edges.
 
+**A new field in `tuning/` broke every stored game.** Each game keeps the
+tuning it was created with; adding `baseCaptureRounds` to `rules.json` made
+every snapshot fail the checker, and the server died at boot resuming bots.
+`upgradeSnapshot` now fills fields a snapshot lacks from the files
+(`fillIn`), and `resumeBots` skips a game that won't load. Pinned in
+`scripts/test-rules.ts`.
+
+**PowerShell 5.1 reads files as ANSI.** `Get-Content` then a write turned
+every —, ×, ° in this file into mojibake. Edit files with the editor tools
+or Python with `encoding="utf-8"`, never a PowerShell read-and-write.
+
 **Seeding writes straight to the database**, past the server's cache. Restart
 the server after `seed`/`unseed`, or it serves games that no longer exist.
 
