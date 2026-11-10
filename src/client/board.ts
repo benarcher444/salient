@@ -276,6 +276,18 @@ export class Board {
     const g = this.ctx;
     baseTiles(this.s.map, v.seats.length).forEach((t, i) => {
       const owner = v.baseOwners[i] ?? null;
+      // A capture under way: a bar along the top of the tile in the
+      // capturer's colour, one segment per round of the step held so far.
+      const taking = v.baseCapture?.[i];
+      if (taking) {
+        const need = RULES.baseCaptureRounds;
+        const c = this.pal.seats[taking.seat]!;
+        const w = 0.8 / need;
+        for (let k = 0; k < need; k++) {
+          g.fillStyle = k < taking.rounds ? c : alpha(colourHex(this.pal.ink), 0.35);
+          g.fillRect(t.x + 0.1 + k * w + 0.02, t.y + 0.03, w - 0.04, 0.09);
+        }
+      }
       if (owner === t.home) return;
       g.save();
       if (owner === null) {

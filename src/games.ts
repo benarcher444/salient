@@ -356,7 +356,14 @@ export function driveBots(id: string) {
 /** At startup, pick up any game left waiting on a bot when the server stopped. */
 export function resumeBots() {
   const active = db.select({ id: games.id }).from(games).where(eq(games.status, "active")).all();
-  for (const g of active) driveBots(g.id);
+  for (const g of active) {
+    // One game that won't load must never keep the server from starting.
+    try {
+      driveBots(g.id);
+    } catch (e) {
+      console.error(`game ${g.id}: could not resume`, e);
+    }
+  }
 }
 
 export function subscribe(id: string, listener: GameListener): () => void {

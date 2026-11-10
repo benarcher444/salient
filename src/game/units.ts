@@ -18,7 +18,9 @@ export function traitText(trait: Trait): string {
     case "unarmed":
       return "Carries no weapon.";
     case "engineer":
-      return "Captures income sites.";
+      return RULES.engineerBaseCaptureRounds < RULES.baseCaptureRounds
+        ? `Captures income sites, and base tiles in ${RULES.engineerBaseCaptureRounds === 1 ? "one round" : `${RULES.engineerBaseCaptureRounds} rounds`} a step.`
+        : "Captures income sites.";
     case "medic":
       return `Allies within ${RULES.medicRange} tiles heal +${RULES.medicHeal} at round end, even under fire.`;
     case "command":

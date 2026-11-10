@@ -42,6 +42,7 @@ export function newGame(mapId: string, seatCount: number): GameState {
     postOwners: map.posts.map(() => null),
     incomeOwners: map.income.map(() => null),
     baseOwners: baseTiles(map, seatCount).map((t) => t.home),
+    baseCapture: baseTiles(map, seatCount).map(() => null),
     orders: Array.from({ length: seatCount }, () => null),
     attackTurn: null,
     actedUnitIds: [],
@@ -154,7 +155,7 @@ export function validateOrders(map: MapDef, state: GameState, seat: Seat, orders
     const k = `${s.x},${s.y}`;
     if (spawnTilesUsed.has(k) || destinations.has(k)) throw new RuleError("spawn_tile_occupied");
     // A teammate standing there now is in the way even if it is ordered off:
-    // spawns land before anyone moves.
+    // kept simple, so a plan never depends on a move working out.
     if (state.units.some((u) => u.seat === seat && u.x === s.x && u.y === s.y)) throw new RuleError("spawn_tile_occupied");
     spawnTilesUsed.add(k);
     cost += UNITS[s.kind].cost;
@@ -165,8 +166,11 @@ export function validateOrders(map: MapDef, state: GameState, seat: Seat, orders
 function maybeResolvePlanning(map: MapDef, state: GameState, events: GameEvent[]) {
   const waiting = state.seats.some((s) => !s.eliminated && state.orders[s.seat] === null);
   if (waiting) return;
-  resolveSpawns(state, events);
+  // Moves first, then deployments: a unit that steps onto a tile gets it, and
+  // a deployment planned there fails (and is refunded). The other way round,
+  // a side could block any tile of its base by buying a unit onto it.
   resolveMoves(map, state, events);
+  resolveSpawns(state, events);
   // Last round's shooters have sat out this move; they may move again next time.
   for (const u of state.units) u.fired = false;
   state.phase = "attack";
@@ -184,7 +188,8 @@ function resolveSpawns(state: GameState, events: GameEvent[]) {
     for (const s of orders.spawns) {
       const cost = UNITS[s.kind].cost;
       // Checked again at resolution: an enemy may have been standing on the
-      // tile all along, unseen. Nothing is charged for a failed deployment.
+      // tile all along, unseen, or have just walked onto it. Nothing is
+      // charged for a failed deployment.
       const blocked = state.units.some((u) => u.x === s.x && u.y === s.y);
       if (blocked || cost > seatState.gold) {
         events.push({ type: "spawnFailed", seat: seatState.seat, kind: s.kind, x: s.x, y: s.y, refund: cost });
@@ -492,8 +497,9 @@ function endRound(map: MapDef, state: GameState, events: GameEvent[]) {
   // Captures. A unit standing on a site its side does not own takes it one
   // step towards its side: an enemy's becomes neutral, a neutral one becomes
   // theirs. One unit per tile, so a capturer is always alone on the tile, and
-  // a defender standing on it blocks it. Base tiles work exactly like command
-  // posts; income sites need an engineer.
+  // a defender standing on it blocks it. Posts take one round a step; income
+  // sites need an engineer; base tiles take baseCaptureRounds a step (an
+  // engineer's, engineerBaseCaptureRounds), held by the same side throughout.
   const capture = (site: "post" | "income" | "base", owners: (Seat | null)[], i: number, p: Point, engineersOnly = false) => {
     const u = unitAt(p);
     if (!u || (engineersOnly && !hasTrait(u.kind, "engineer"))) return;
@@ -505,7 +511,24 @@ function endRound(map: MapDef, state: GameState, events: GameEvent[]) {
   };
   map.posts.forEach((p, i) => capture("post", state.postOwners, i, p));
   map.income.forEach((p, i) => capture("income", state.incomeOwners, i, p, true));
-  baseTiles(map, state.seatCount).forEach((p, i) => capture("base", state.baseOwners, i, p));
+  baseTiles(map, state.seatCount).forEach((p, i) => {
+    const u = unitAt(p);
+    if (!u || state.baseOwners[i] === u.seat) {
+      // Nobody taking it (or its owner standing on it): progress is lost.
+      state.baseCapture[i] = null;
+      return;
+    }
+    const needed = hasTrait(u.kind, "engineer") ? RULES.engineerBaseCaptureRounds : RULES.baseCaptureRounds;
+    const before = state.baseCapture[i];
+    const rounds = before && before.seat === u.seat ? before.rounds + 1 : 1;
+    if (rounds >= needed) {
+      state.baseCapture[i] = null;
+      capture("base", state.baseOwners, i, p);
+    } else {
+      state.baseCapture[i] = { seat: u.seat, rounds };
+      events.push({ type: "captureProgress", site: "base", index: i, seat: u.seat, rounds, needed });
+    }
+  });
 
   for (const s of state.seats) {
     if (s.eliminated) continue;

@@ -176,10 +176,11 @@ export function rulesPage(user: User | null): Html {
 <div class="rules stack">
   <section class="card"><div class="card-body prose">
     <h2>The goal</h2>
-    <p><strong>Take their base.</strong> Every side starts with a small base: a few tiles it deploys onto. Base tiles are captured one at a time, like command posts: end a round on an enemy's base tile and it turns neutral; end the next round there and it's yours, and you can deploy on it. A side with <strong>no base tiles and no units left is out</strong>. The last side standing wins. If ${RULES.roundLimit} rounds pass, it's a draw.</p>
+    <p><strong>Take their base.</strong> Every side starts with a small base: a few tiles it deploys onto. Base tiles are captured one at a time, and slowly: hold an enemy's base tile for ${RULES.baseCaptureRounds} rounds and it turns neutral; hold it ${RULES.baseCaptureRounds} more and it's yours, and you can deploy on it. An <strong>engineer</strong> does each step in ${RULES.engineerBaseCaptureRounds === 1 ? "one round" : `${RULES.engineerBaseCaptureRounds} rounds`}. Step off, or get shot off, and the progress is lost; a bar on the tile shows how far along it is. A side with <strong>no base tiles and no units left is out</strong>. The last side standing wins. If ${RULES.roundLimit} rounds pass, it's a draw.</p>
     <h2>A round</h2>
     <ol class="steps">
       <li><strong>Plan.</strong> Everyone plans at the same time, in secret. Buy units onto any base tile or command post you hold, and give each unit a route and a facing. Lock in when ready.</li>
+      <li><strong>Move, then deploy.</strong> Moves resolve first, then new units land: a deployment onto a tile someone has just walked onto fails, and its gold comes back.</li>
       <li><strong>Move.</strong> When the last player locks in, all routes play out together, one step at a time. Your own units walk through each other freely, but no two can finish on the same tile. Units of different sides heading for the same tile both stop, and so does anyone who walks into an enemy they couldn't see.</li>
       <li><strong>Attack.</strong> Players take turns firing one unit at a time (a commando takes both its shots in its turn). A unit that fires can't move in the next round, only turn. The first shot rotates each round. Units with nothing in reach are skipped automatically.</li>
       <li><strong>Upkeep.</strong> Captures (base tiles, posts, income sites), income and healing. Anyone left with no base tiles and no units is knocked out.</li>

@@ -370,6 +370,36 @@ section("Shooting");
 }
 
 // ---------------------------------------------------------------------------
+section("Moves resolve before deployments");
+
+{
+  board("move-then-deploy");
+  const tiles = baseTiles(getMap("move-then-deploy"), 2);
+  const t = tiles.find((p) => p.home === 1)!;
+  const s = stateOn("move-then-deploy", [unit(1, 0, "rifleman", t.x - 1, t.y), unit(2, 1, "rifleman", 2, 2)]);
+  const o0 = { moves: [{ unitId: 1, path: [{ x: t.x, y: t.y }], facing: E }], spawns: [] };
+  const o1 = { moves: [], spawns: [{ kind: "rifleman" as UnitKind, x: t.x, y: t.y, facing: W }] };
+  let r = applyAction(s, { type: "orders", seat: 0, orders: o0 }, roll(0.5));
+  r = applyAction(r.state, { type: "orders", seat: 1, orders: o1 }, roll(0.5));
+  check("a unit stepping onto a base tile gets there before a deployment onto it", pos(at(r.state, 1)) === `${t.x},${t.y}`, pos(at(r.state, 1)));
+  const failed = r.events.find((e) => e.type === "spawnFailed");
+  check("so the deployment fails, refunded", failed?.type === "spawnFailed" && r.state.seats[1]!.gold === RULES.startGold + RULES.baseIncome, `${r.state.seats[1]!.gold}`);
+}
+{
+  board("onto-teammate");
+  const s = stateOn("onto-teammate", [unit(1, 0, "rifleman", 2, 6), unit(2, 0, "rifleman", 3, 6)]);
+  const ok = codeOf(() =>
+    validateOrders(getMap("onto-teammate"), s, 0, {
+      moves: [
+        { unitId: 1, path: [{ x: 3, y: 6 }], facing: E },
+        { unitId: 2, path: [{ x: 3, y: 5 }], facing: E },
+      ],
+      spawns: [],
+    }),
+  );
+  check("you can plan to end where a teammate stands if it is moving away", ok === "no error", ok);
+}
+
 section("Units on the line of fire");
 
 {
@@ -750,14 +780,19 @@ section("Bases: captured tile by tile, like command posts");
   const a = idx(11, 11);
   let s = stateOn("bases", [unit(1, 0, "rifleman", 11, 11), unit(2, 1, "rifleman", 5, 5)]);
   check("every base tile starts owned by its home seat", s.baseOwners.every((o, i) => o === tiles[i]!.home), s.baseOwners.join(","));
+  const R = RULES.baseCaptureRounds;
   let r = resolve(s, [], []);
   s = r.state;
-  check("an enemy alone on a base tile turns it neutral", s.baseOwners[a] === null, String(s.baseOwners[a]));
+  check(`one round on an enemy base tile isn't enough (it takes ${R})`, s.baseOwners[a] === 1 && s.baseCapture[a]?.seat === 0 && s.baseCapture[a]?.rounds === 1, JSON.stringify(s.baseCapture[a]));
+  const prog = r.events.find((e) => e.type === "captureProgress");
+  check("with a progress event", prog?.type === "captureProgress" && prog.index === a && prog.rounds === 1 && prog.needed === R);
+  for (let i = 1; i < R; i++) r = resolve(r.state, [], []);
+  s = r.state;
+  check(`after ${R} rounds it turns neutral`, s.baseOwners[a] === null, String(s.baseOwners[a]));
   const ev = r.events.find((e) => e.type === "capture" && e.site === "base");
   check("with a capture event naming the base tile", ev?.type === "capture" && ev.index === a && ev.from === 1 && ev.to === null);
-  r = resolve(s, [], []);
-  s = r.state;
-  check("the next round it becomes theirs", s.baseOwners[a] === 0);
+  for (let i = 0; i < R; i++) s = resolve(s, [], []).state;
+  check(`and ${R} more make it theirs: ${2 * R} rounds in all`, s.baseOwners[a] === 0);
 
   // Captured base tiles are spawn tiles for the captor, and lost ones are not for the loser.
   s.units = s.units.filter((u) => u.id !== 1);
@@ -769,9 +804,20 @@ section("Bases: captured tile by tile, like command posts");
 
   // Taking it back works the same way.
   s.units = [unit(5, 1, "rifleman", 11, 11), unit(6, 0, "rifleman", 5, 5)];
-  s = resolve(s, [], []).state;
-  s = resolve(s, [], []).state;
+  for (let i = 0; i < 2 * R; i++) s = resolve(s, [], []).state;
   check("the owner can retake it: neutral, then theirs again", s.baseOwners[a] === 1, String(s.baseOwners[a]));
+
+  // An engineer takes a step every engineerBaseCaptureRounds rounds.
+  s.units = [unit(7, 0, "engineer", 11, 11), unit(8, 1, "rifleman", 5, 5)];
+  for (let i = 0; i < RULES.engineerBaseCaptureRounds; i++) s = resolve(s, [], []).state;
+  check(`an engineer turns it neutral in ${RULES.engineerBaseCaptureRounds}`, s.baseOwners[a] === null, String(s.baseOwners[a]));
+
+  // Walking off loses the progress.
+  s.baseOwners[a] = 1;
+  s.units = [unit(9, 0, "rifleman", 11, 11), unit(10, 1, "rifleman", 0, 6)];
+  s = resolve(s, [], []).state;
+  s = resolve(s, [{ unitId: 9, path: [{ x: 11, y: 10 }] }]).state;
+  check("leaving the tile loses the progress", s.baseCapture[a] === null && s.baseOwners[a] === 1, JSON.stringify(s.baseCapture[a]));
 }
 {
   board("bases-blocked");
@@ -784,7 +830,7 @@ section("Bases: captured tile by tile, like command posts");
   // An enemy on a tile already neutral (or theirs) after the other seat's unit leaves...
   s.baseOwners[a] = null;
   s.units = [unit(1, 1, "rifleman", 11, 11)];
-  s = resolve(s, [], []).state;
+  for (let i = 0; i < RULES.baseCaptureRounds; i++) s = resolve(s, [], []).state;
   check("a side standing on its own neutral base tile takes it back", s.baseOwners[a] === 1);
 }
 {
@@ -968,6 +1014,24 @@ section("Tuning files: checked, and snapshotted per game");
   }
   const current = upgradeSnapshot({ version: 2, ...(structuredClone(FILE_TUNING) as unknown as { rules: unknown; units: Record<string, unknown> }) });
   check("a current snapshot passes through unchanged", JSON.stringify(current) === JSON.stringify(FILE_TUNING));
+
+  // A current-format snapshot taken before a field was added to the files
+  // (a game created yesterday): it must still load, keeping its own numbers.
+  const yesterday = structuredClone(FILE_TUNING) as unknown as { rules: Record<string, unknown>; units: Record<string, Record<string, unknown>> };
+  delete yesterday.rules.baseCaptureRounds;
+  (yesterday.rules.flank as Record<string, unknown>).side = 1.25;
+  yesterday.rules.retiredField = 3;
+  let filled: Tuning | null = null;
+  let why = "";
+  try {
+    filled = upgradeSnapshot({ version: 2, ...(yesterday as unknown as { rules: unknown; units: Record<string, unknown> }) });
+  } catch (e) {
+    why = String(e);
+  }
+  check("a snapshot missing a newer field still loads", !!filled, why);
+  check("taking the new field from the files", filled?.rules.baseCaptureRounds === FILE_TUNING.rules.baseCaptureRounds);
+  check("and keeping its own numbers", filled?.rules.flank.side === 1.25, String(filled?.rules.flank.side));
+  check("dropping a field the files no longer have", !!filled && !("retiredField" in filled.rules));
 }
 {
   // A game played under one tuning replays identically under its snapshot,

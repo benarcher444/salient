@@ -83,6 +83,8 @@ export interface RulesTuning {
   critMultiplier: number;
   damageVariance: number;
   roundLimit: number;
+  baseCaptureRounds: number;
+  engineerBaseCaptureRounds: number;
   siteSight: number;
   minHitChance: number;
   maxHitChance: number;
@@ -156,6 +158,8 @@ const RULE_NUMBERS: NumberRule[] = [
   ["critMultiplier", 0, 100],
   ["damageVariance", 0, 1],
   ["roundLimit", 1, 1000, true],
+  ["baseCaptureRounds", 1, 100, true],
+  ["engineerBaseCaptureRounds", 1, 100, true],
   ["siteSight", 0, 40],
   ["minHitChance", 0, 100],
   ["maxHitChance", 0, 100],
@@ -259,13 +263,35 @@ export const FILE_TUNING: Tuning = checkTuning({
 });
 
 /**
+ * A current-format snapshot taken before some field was added (a new rule
+ * number, say): it keeps every value it has, and takes the missing ones from
+ * the files. Fields the files no longer have are dropped. Without this, one
+ * new field in rules.json would make every stored game fail to load.
+ */
+function fillIn(raw: { rules: unknown; units: Record<string, unknown> }): { rules: unknown; units: Record<string, unknown> } {
+  const merge = (fresh: Record<string, unknown>, old: unknown): Record<string, unknown> => {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(fresh)) {
+      const kept = isObject(old) && k in old ? old[k] : undefined;
+      out[k] = isObject(v) ? merge(v, kept) : kept === undefined ? structuredClone(v) : kept;
+    }
+    return out;
+  };
+  const units: Record<string, unknown> = {};
+  for (const kind of UNIT_KINDS) {
+    units[kind] = kind in raw.units ? merge(FILE_TUNING.units[kind] as unknown as Record<string, unknown>, raw.units[kind]) : FILE_TUNING.units[kind];
+  }
+  return { rules: merge(FILE_TUNING.rules as unknown as Record<string, unknown>, raw.rules), units };
+}
+
+/**
  * A stored snapshot, brought up to the current format. A game from before
  * version 2 keeps the numbers it had where they still mean something; classes,
  * fields and traits it never had come from the files, and fields that no
  * longer exist are dropped.
  */
 export function upgradeSnapshot(raw: { version?: number; rules: unknown; units: Record<string, unknown> }): Tuning {
-  if (raw.version === TUNING_VERSION) return checkTuning(raw);
+  if (raw.version === TUNING_VERSION) return checkTuning(fillIn(raw));
   const pick = <T extends object>(fresh: T, old: unknown): T => {
     const out = { ...fresh } as Record<string, unknown>;
     if (isObject(old)) {

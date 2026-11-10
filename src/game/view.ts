@@ -33,6 +33,8 @@ export interface PlayerView {
   incomeOwners: (Seat | null)[];
   /** Owner of every base tile, by index into baseTiles(map, seats.length). Public, like posts. */
   baseOwners: (Seat | null)[];
+  /** Base tiles part way through a capture step, by the same index. Public: you can see who stands on your base. */
+  baseCapture: ({ seat: Seat; rounds: number } | null)[];
   /** The viewer's own submitted orders this round, if any. */
   myOrders: Orders | null;
   attackTurn: Seat | null;
@@ -72,6 +74,7 @@ export function viewFor(state: GameState, seat: Seat | null): PlayerView {
     postOwners: [...state.postOwners],
     incomeOwners: [...state.incomeOwners],
     baseOwners: [...state.baseOwners],
+    baseCapture: structuredClone(state.baseCapture),
     myOrders: seat === null ? null : structuredClone(state.orders[seat] ?? null),
     attackTurn: state.attackTurn,
     acted: state.actedUnitIds.filter((id) => units.some((u) => u.id === id && u.seat === seat)),
@@ -139,6 +142,7 @@ export function stateFromView(v: PlayerView): GameState {
     postOwners: v.postOwners,
     incomeOwners: v.incomeOwners,
     baseOwners: v.baseOwners,
+    baseCapture: v.baseCapture,
     orders: v.seats.map(() => null),
     attackTurn: v.attackTurn,
     actedUnitIds: v.acted,

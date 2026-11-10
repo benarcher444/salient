@@ -84,6 +84,8 @@ any class any of the existing ones.
 | `critMultiplier` | A critical hit's damage multiplier. |
 | `damageVariance` | How much a hit's damage varies either way, from 0 to 1 (0.1 = 10% less to 10% more). |
 | `roundLimit` | If nobody has won after this many rounds, the game is a draw. |
+| `baseCaptureRounds` | Rounds a unit must hold an enemy base tile to make it neutral, and the same again to make it its own side's. Whole number. |
+| `engineerBaseCaptureRounds` | The same for an engineer (1 = a step every round). |
 | `siteSight` | How far you see around base tiles and command posts you hold. |
 | `minHitChance`, `maxHitChance` | Every shot's chance is kept between these percentages. |
 | `coverFactor` | Hit chance is multiplied by this when the target is in cover (0.7 = 30% less likely). |

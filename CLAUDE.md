@@ -268,9 +268,13 @@ battle page re-reads the palette when the device scheme changes.
 an earlier Battlefront-style ticket system (no tickets, no bleed). Every base
 tile has an owner (`state.baseOwners`, indexed by `baseTiles(map,
 seatCount)`: the playing seats' bases flattened in seat order) and is
-captured exactly like a command post, by the same `capture` helper in
-`endRound`: a unit ending a round on it moves it one step towards its side
-(theirs → neutral → yours). A captured base tile is a spawn tile for its new
+captured like a command post, by the same `capture` helper in `endRound`,
+one step towards the capturer's side (theirs → neutral → yours), but a step
+takes `baseCaptureRounds` rounds held by the same side (2; an engineer's
+`engineerBaseCaptureRounds`, 1), tracked in `state.baseCapture` and lost if
+the tile is left. The owner asked for it: four rounds to flip a tile. Moves
+resolve before deployments (the owner's call too), so a side can't block a
+base tile by buying a unit onto it as an attacker steps there. A captured base tile is a spawn tile for its new
 owner; a lost one is not for the old. A side is out when it owns **no base
 tiles and has no units** (`knockedOut`): checked at round end, and at once
 when its last unit is shot. Command posts don't keep you in. A held post is a spawn tile on its own tile

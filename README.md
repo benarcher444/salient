@@ -15,8 +15,8 @@ battlefields in the map editor and play them straight away.
 ## The game in a minute
 
 - **Take their base.** Each side starts with a small base. Base tiles are
-  captured one at a time, like command posts: end a round on one and it turns
-  neutral, end the next there and it's yours to deploy on. A side with no
+  captured one at a time: hold an enemy tile two rounds and it turns neutral,
+  two more and it's yours to deploy on (an engineer does each step in one). A side with no
   base tiles and no units left is out; the last one standing wins.
 - **A round:** everyone **plans** at once (deploy units, give each a route and
   a facing) → everything **moves** together, step by step → players take turns

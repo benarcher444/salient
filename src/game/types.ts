@@ -128,6 +128,12 @@ export interface GameState {
    * playing seats' bases, flattened in seat order. Starts as the home seat.
    */
   baseOwners: (Seat | null)[];
+  /**
+   * A base tile part way through a step of capture, by the same index: which
+   * side has held it and for how many rounds so far. A step takes
+   * baseCaptureRounds rounds (an engineer's, engineerBaseCaptureRounds).
+   */
+  baseCapture: ({ seat: Seat; rounds: number } | null)[];
   /** Planning phase: each seat's submitted orders, or null while still planning. */
   orders: (Orders | null)[];
   /** Attack phase: whose activation it is, and which units have used theirs. */
@@ -173,6 +179,7 @@ export type GameEvent =
     }
   | { type: "hold"; unitId: number; seat: Seat }
   | { type: "capture"; site: "post" | "income" | "base"; index: number; from: Seat | null; to: Seat | null }
+  | { type: "captureProgress"; site: "base"; index: number; seat: Seat; rounds: number; needed: number }
   | { type: "income"; seat: Seat; amount: number }
   | { type: "eliminated"; seat: Seat }
   | { type: "round"; round: number }

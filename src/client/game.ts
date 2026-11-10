@@ -271,6 +271,13 @@ function logEvent(e: GameEvent, round: number) {
     case "capture":
       html = captureLine(e, who);
       break;
+    case "captureProgress": {
+      const left = e.needed - e.rounds;
+      const home = baseTiles(s.map, s.view?.seats.length ?? 2)[e.index]?.home;
+      const whose = home === seat ? "your" : home === e.seat ? "their own" : `${who(home ?? 0)}'s`;
+      html = `${who(e.seat)} ${e.seat === seat ? "are" : "is"} taking ${whose} base tile: ${left} more round${left === 1 ? "" : "s"} there and it changes hands.`;
+      break;
+    }
     case "income":
       html = `+${e.amount} gold.`;
       break;
@@ -343,14 +350,18 @@ function planningTap(p: Point, u: Unit | undefined, input: Input) {
       return;
     }
   }
-  if (u && isMine(s, u)) {
+  // A teammate that is moving away leaves its tile free: with a unit
+  // selected, clicking it routes the selected unit there (deselect first to
+  // pick the teammate itself).
+  const leaving = !!u && isMine(s, u) && !!moveOrderFor(s, u.id)?.path.length;
+  if (u && isMine(s, u) && !(selUnit && isMine(s, selUnit) && leaving && u.id !== selUnit.id)) {
     s.selected = { type: "unit", id: u.id };
     // With a mouse the unit turns to follow the pointer straight away: a
     // right click sets that facing, a left click on a tile moves it instead.
     if (input === "mouse") startAim();
     return;
   }
-  if (selUnit && isMine(s, selUnit) && !u) {
+  if (selUnit && isMine(s, selUnit) && (!u || leaving)) {
     const reach = reachOf(s, selUnit);
     const path = pathTo(s.map, reach, p);
     if (path && path.length) {
