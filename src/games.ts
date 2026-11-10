@@ -49,12 +49,14 @@ function newGameId(): string {
 
 function loadPlayers(gameId: string): PlayerInfo[] {
   return db
-    .select({ seat: gamePlayers.seat, userId: gamePlayers.userId, name: users.displayName, isBot: users.isBot })
+    .select({ seat: gamePlayers.seat, userId: gamePlayers.userId, name: users.displayName, isBot: users.isBot, isGuest: users.isGuest })
     .from(gamePlayers)
     .innerJoin(users, eq(users.id, gamePlayers.userId))
     .where(eq(gamePlayers.gameId, gameId))
     .orderBy(asc(gamePlayers.seat))
-    .all();
+    .all()
+    // Guests are marked wherever names show: the scoreboard, the waiting room.
+    .map(({ isGuest, ...p }) => ({ ...p, name: isGuest ? `${p.name} (guest)` : p.name }));
 }
 
 /**
@@ -264,12 +266,16 @@ export function deleteGame(id: string, userId: number): DeleteResult {
 }
 
 /**
- * Remove a game row (players and actions cascade), stop its bot timer, drop
+ * Remove a game row (players and actions cascade) and its guest accounts, stop its bot timer, drop
  * it from the cache, and tell anyone watching it, whose pages then show it
  * has gone.
  */
 function removeGame(game: Game) {
-  db.delete(games).where(eq(games.id, game.id)).run();
+  sqlite.transaction(() => {
+    db.delete(games).where(eq(games.id, game.id)).run();
+    // Its guests could only ever reach this game: they go with it (their sessions cascade).
+    db.delete(users).where(and(eq(users.isGuest, true), eq(users.guestGameId, game.id))).run();
+  })();
   const timer = botTimers.get(game.id);
   if (timer) clearTimeout(timer);
   botTimers.delete(game.id);

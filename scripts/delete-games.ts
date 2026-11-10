@@ -6,9 +6,9 @@
 // The server keeps games it has loaded in memory: restart it afterwards
 // (systemctl restart salient on the server), or it serves them until then.
 import "../src/env.js";
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../src/db/index.js";
-import { games } from "../src/db/schema.js";
+import { games, users } from "../src/db/schema.js";
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
@@ -28,6 +28,9 @@ for (const g of doomed) console.log(`  #${g.id}  ${g.status.padEnd(6)}  round ${
 if (!doomed.length) console.log("No games match.");
 else if (dryRun) console.log(`${doomed.length} game(s) would be deleted (dry run: nothing deleted).`);
 else {
-  db.delete(games).where(inArray(games.id, doomed.map((g) => g.id))).run();
+  const gone = doomed.map((g) => g.id);
+  db.delete(games).where(inArray(games.id, gone)).run();
+  // Guests could only reach their one game: they go with it.
+  db.delete(users).where(and(eq(users.isGuest, true), inArray(users.guestGameId, gone))).run();
   console.log(`Deleted ${doomed.length} game(s). Restart the server so it forgets them.`);
 }

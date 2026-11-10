@@ -8,6 +8,7 @@ import { ERROR_TEXT, RuleError, type Facing, type Orders } from "../game/types.j
 import { eventsFor, viewFor, type PlayerView } from "../game/view.js";
 import { act, createGame, deleteGame, gamesFor, inGame, joinGame, leaveGame, loadGame, openGames, subscribe, type ClientAction, type LiveGame } from "../games.js";
 import { clientMessage } from "../protocol.js";
+import { inviteTokenFor } from "../guest.js";
 import { battlePage } from "../views/game-view.js";
 import { deleteGamePage, lobbyPage, notFoundPage, waitingRoom } from "../views/pages.js";
 
@@ -46,7 +47,8 @@ export function gameRoutes(app: FastifyInstance) {
     if (!live) return reply.code(404).type(html).send(notFoundPage(user));
     const seat = live.players.find((p) => p.userId === user.id)?.seat ?? null;
     if (!live.state) {
-      const shareUrl = `${request.protocol}://${request.host}/g/${id}`;
+      // The invite link lets anyone with it take a seat, as a guest if they have no account.
+      const shareUrl = `${request.protocol}://${request.host}/g/${id}/invite/${inviteTokenFor(id)}`;
       return reply.type(html).send(waitingRoom(user, { game: live.game, map: live.map, players: live.players, mySeat: seat, yourMove: false }, shareUrl));
     }
     // Outsiders may look at a finished game, never one in progress: they

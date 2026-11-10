@@ -78,7 +78,8 @@ export async function signIn(email: string, password: string): Promise<SignInRes
     return { ok: false, reason: "bad_credentials" };
   }
   if (user.lockedAt) return { ok: false, reason: "locked" };
-  if (user.isBot) return { ok: false, reason: "bad_credentials" };
+  // Bots and guests have no password to give.
+  if (user.isBot || user.isGuest) return { ok: false, reason: "bad_credentials" };
   const good = await argon2.verify(user.passwordHash, password);
   if (!good) {
     const failed = user.failedLogins + 1;

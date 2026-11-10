@@ -10,7 +10,7 @@ import { authPage } from "../views/pages.js";
 
 const QUARTER_HOUR = 15 * 60 * 1000;
 
-function setSessionCookie(request: FastifyRequest, reply: FastifyReply, userId: number) {
+export function setSessionCookie(request: FastifyRequest, reply: FastifyReply, userId: number) {
   const { token, expiresAt } = createSession(userId);
   reply.setCookie(SESSION_COOKIE, token, {
     path: "/",

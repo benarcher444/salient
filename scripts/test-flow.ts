@@ -70,7 +70,7 @@ await alex.page.check('input[name="opponents"][value="people"]', { force: true }
 await Promise.all([alex.page.waitForURL(/\/g\//), alex.page.click('#new-game button[type="submit"]')]);
 const gameUrl = alex.page.url();
 const shareUrl = await alex.page.inputValue("#share-url");
-check("the creator lands in the waiting room with a share link", shareUrl.endsWith(new URL(gameUrl).pathname), shareUrl);
+check("the creator lands in the waiting room with a share link", shareUrl.includes(`${new URL(gameUrl).pathname}/invite/`), shareUrl);
 
 await sam.page.goto(shareUrl);
 await Promise.all([sam.page.waitForURL(/\/g\//), sam.page.click('form[action$="/join"] button')]);
