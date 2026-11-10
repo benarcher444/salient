@@ -77,6 +77,11 @@ export interface Unit {
   moved: boolean;
   /** Was hit this round, so it does not heal at the end of it. */
   damaged: boolean;
+  /**
+   * Fired in the last attack phase, so it may not move in the planning phase
+   * that follows (turning on the spot is fine). Cleared once moves resolve.
+   */
+  fired: boolean;
 }
 
 export interface SeatState {
@@ -196,6 +201,7 @@ export type RuleErrorCode =
   | "not_enough_gold"
   | "already_acted"
   | "cannot_shoot"
+  | "fired_cannot_move"
   | "finish_burst"
   | "game_over";
 
@@ -215,5 +221,6 @@ export const ERROR_TEXT: Record<RuleErrorCode, string> = {
   already_acted: "That unit has already acted this round.",
   cannot_shoot: "That unit can't hit that target from here.",
   finish_burst: "Your unit still has a shot to take: fire it or hold.",
+  fired_cannot_move: "A unit that fired last round can't move this round (it can still turn).",
   game_over: "The game is over.",
 };

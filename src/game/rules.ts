@@ -127,6 +127,7 @@ export function validateOrders(map: MapDef, state: GameState, seat: Seat, orders
     seen.add(m.unitId);
     const unit = ownUnit(state, seat, m.unitId);
     if (!isFacing(m.facing)) throw new RuleError("bad_path", `facing ${m.facing}`);
+    if (unit.fired && m.path.length > 0) throw new RuleError("fired_cannot_move", `unit ${unit.id}`);
     const verdict = validatePath(map, unit, m.path);
     if (verdict !== "ok") throw new RuleError(verdict, `unit ${unit.id}`);
     byUnit.set(unit.id, m);
@@ -166,6 +167,8 @@ function maybeResolvePlanning(map: MapDef, state: GameState, events: GameEvent[]
   if (waiting) return;
   resolveSpawns(state, events);
   resolveMoves(map, state, events);
+  // Last round's shooters have sat out this move; they may move again next time.
+  for (const u of state.units) u.fired = false;
   state.phase = "attack";
   state.actedUnitIds = [];
   state.burst = null;
@@ -198,6 +201,7 @@ function resolveSpawns(state: GameState, events: GameEvent[]) {
         hp: UNITS[s.kind].hp,
         moved: false,
         damaged: false,
+        fired: false,
       };
       state.units.push(unit);
       events.push({ type: "spawn", unit: { ...unit } });
@@ -344,7 +348,7 @@ export function targetsFor(map: MapDef, state: GameState, unit: Unit, tiles?: Re
   if (!isArmed(unit.kind)) return [];
   const seen = tiles ?? visibleTiles(map, state, unit.seat);
   return state.units.filter(
-    (t) => t.seat !== unit.seat && unitVisibleTo(map, state, unit.seat, t, seen) && previewShot(map, unit, t).possible,
+    (t) => t.seat !== unit.seat && unitVisibleTo(map, state, unit.seat, t, seen) && previewShot(map, unit, t, state.units).possible,
   );
 }
 
@@ -418,6 +422,7 @@ function attack(
     return u.hp <= 0;
   };
   const dead = new Set<number>();
+  shooter.fired = true;
   if (result.hit && hurt(target, result.damage)) dead.add(target.id);
 
   // Explosives: the shell lands on the target's tile whether it hits or not.

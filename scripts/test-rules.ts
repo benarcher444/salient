@@ -38,7 +38,7 @@ function board(id: string, draw: (b: MapBuilder) => void = () => {}, w = 12, h =
 }
 
 function unit(id: number, seat: number, kind: UnitKind, x: number, y: number, extra: Partial<Unit> = {}): Unit {
-  return { id, seat, kind, x, y, facing: 90, hp: UNITS[kind].hp, moved: false, damaged: false, ...extra };
+  return { id, seat, kind, x, y, facing: 90, hp: UNITS[kind].hp, moved: false, damaged: false, fired: false, ...extra };
 }
 
 /** Facings in degrees: 0 north, clockwise. */
@@ -214,10 +214,13 @@ section("Movement");
   const m = board("move-range");
   const r = unit(1, 0, "rifleman", 0, 5);
   const reach = reachable(m, r, new Set());
-  check("a rifleman walks 5 tiles straight", reach.cost.has(5 * m.width + 5));
-  check("but not 6", !reach.cost.has(5 * m.width + 6));
-  check("3 diagonal steps cost 4.5 tiles: in range", validatePath(m, unit(2, 0, "rifleman", 0, 0), [{ x: 1, y: 1 }, { x: 2, y: 2 }, { x: 3, y: 3 }]) === "ok");
-  check("4 diagonal steps cost 6: too far", validatePath(m, unit(2, 0, "rifleman", 0, 0), [1, 2, 3, 4].map((i) => ({ x: i, y: i }))) === "path_too_long");
+  const M = UNITS.rifleman.move;
+  const diag = Math.floor(M / 1.5);
+  const diagonal = (n: number) => Array.from({ length: n }, (_, i) => ({ x: i + 1, y: i + 1 }));
+  check(`a rifleman walks its move (${M}) in a straight line`, reach.cost.has(5 * m.width + M));
+  check("but not a tile further", !reach.cost.has(5 * m.width + M + 1));
+  check(`${diag} diagonal steps cost ${diag * 1.5} tiles: in range`, validatePath(m, unit(2, 0, "rifleman", 0, 0), diagonal(diag)) === "ok");
+  check(`${diag + 1} cost ${(diag + 1) * 1.5}: too far`, validatePath(m, unit(2, 0, "rifleman", 0, 0), diagonal(diag + 1)) === "path_too_long");
   check("teleporting is not a path", validatePath(m, r, [{ x: 3, y: 5 }]) === "bad_path");
   const path = pathTo(m, reach, { x: 3, y: 5 });
   check("pathTo rebuilds the route without the start", path?.length === 3 && path[2]!.x === 3, JSON.stringify(path));
@@ -367,6 +370,24 @@ section("Shooting");
 }
 
 // ---------------------------------------------------------------------------
+section("Units on the line of fire");
+
+{
+  const m = board("shoot-open");
+  const shooter = unit(1, 0, "rifleman", 2, 5, { facing: E });
+  const target = unit(2, 1, "rifleman", 6, 5, { facing: W });
+  const enemyBetween = unit(3, 1, "rifleman", 4, 5);
+  const friendBetween = unit(4, 0, "rifleman", 4, 5);
+  const blocked = previewShot(m, shooter, target, [shooter, target, enemyBetween]);
+  check("an enemy standing on the line blocks the shot", !blocked.possible && blocked.block === "enemy_in_way", blocked.block ?? "possible");
+  const past = previewShot(m, shooter, target, [shooter, target, friendBetween]);
+  check("your own unit on the line doesn't: you shoot past it", past.possible, past.block ?? "");
+  const aside = previewShot(m, shooter, target, [shooter, target, unit(3, 1, "rifleman", 4, 6)]);
+  check("an enemy beside the line doesn't block it", aside.possible, aside.block ?? "");
+  const st = stateOn("shoot-open", [shooter, target, enemyBetween]);
+  check("so the target behind it isn't a target at all", !targetsFor(m, st, at(st, 1)!).some((t) => t.id === 2));
+}
+
 section("Simultaneous movement");
 
 interface MoveSpec {
@@ -424,6 +445,14 @@ const row = (y: number, ...xs: number[]) => xs.map((x) => ({ x, y }));
     applyAction(s, { type: "orders", seat: 1, orders: { moves: [{ unitId: 1, path: [], facing: E }], spawns: [] } }, roll(0.5)),
   );
   check("or give orders to someone else's unit", theirs === "not_your_unit", theirs);
+}
+{
+  const s = stateOn("lockstep", [unit(1, 0, "rifleman", 2, 6, { fired: true }), unit(2, 1, "rifleman", 9, 6)]);
+  const code = codeOf(() => applyAction(s, { type: "orders", seat: 0, orders: { moves: [{ unitId: 1, path: row(6, 3), facing: E }], spawns: [] } }, roll(0.5)));
+  check("a unit that fired last round can't move", code === "fired_cannot_move", code);
+  const r = resolve(s, [{ unitId: 1, path: [], facing: S }]).state;
+  check("but it can turn on the spot", at(r, 1)!.facing === S && pos(at(r, 1)) === "2,6", `${at(r, 1)!.facing}`);
+  check("and the next round it may move again", !at(r, 1)!.fired);
 }
 {
   const s = stateOn("lockstep", [unit(1, 0, "rifleman", 2, 6), unit(2, 0, "rifleman", 3, 6)]);
@@ -509,6 +538,7 @@ section("Attack turns");
   check("a hit kills a wounded scout", shot?.type === "shot" && shot.hit && shot.killed && !at(r.state, 4));
   check("losing a unit with base tiles left keeps you in", !r.state.seats[1]!.eliminated);
   check("and the turn passes", r.state.attackTurn === 1);
+  check("the shooter is marked as having fired", at(r.state, 1)!.fired);
   const twice = codeOf(() => applyAction(r.state, { type: "attack", seat: 0, unitId: 1, targetId: 3 }, roll(0)));
   check("you can't act out of turn", twice === "not_your_turn", twice);
   r = applyAction(r.state, { type: "attack", seat: 1, unitId: 3, targetId: 1 }, roll(0.99));
@@ -517,6 +547,7 @@ section("Attack turns");
   const again = codeOf(() => applyAction(r.state, { type: "attack", seat: 0, unitId: 1, targetId: 3 }, roll(0)));
   check("each unit acts once", again === "already_acted", again);
   r = applyAction(r.state, { type: "hold", seat: 0, unitId: 2 }, roll(0));
+  check("holding fire isn't firing", !at(r.state, 2)!.fired);
   check("when nobody has anything left, the round ends", r.state.phase === "planning" && r.state.round === 2, `${r.state.phase} ${r.state.round}`);
   check("the unit that was shot at but missed heals", at(r.state, 1)!.hp === 100);
 }

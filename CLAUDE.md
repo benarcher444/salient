@@ -118,7 +118,16 @@ per tick. A side's own units pass through each other (the owner's call):
 only enemies block, so two sides wanting one tile both stop, a swap with an
 enemy is refused, and walking into an unseen enemy stops you facing it.
 Nobody finishes on a shared tile: afterwards the later arrival steps back
-along its route until every tile holds one unit. The rule looks only at the current
+along its route until every tile holds one unit. A unit that fired
+(`unit.fired`, set by an attack, cleared once the next moves resolve) may
+not move in the next planning phase, only turn (`fired_cannot_move`).
+
+**Enemies block shots; your own side doesn't.** `traceLine` returns the tiles
+a line passes through, and `previewShot` refuses a shot (`enemy_in_way`)
+when any unit not of the shooter's side stands on one. It needs the units
+list for that, so every caller passes the units it knows: the server all of
+them, a browser or bot its own view (an unseen blocker means the server
+refuses a shot the browser offered). The rule looks only at the current
 tick, so the result never depends on unit order. Attack turns go round the
 table one unit at a time; the first shooter rotates each round; a seat with
 nothing in reach is skipped automatically. A unit with more than one shot
@@ -127,8 +136,10 @@ may switch targets between them.
 
 **A facing is any whole degree, 0..359** (0 north, clockwise). It was one of
 eight; the owner wanted to point anywhere. Whole degrees keep the action log
-exact. In the battle (the owner's scheme), a left click sets a route and
-leaves the unit turning to follow the pointer (`s.aiming`); a right click
+exact. In the battle (the owner's scheme), clicking your unit with the mouse
+starts it turning to follow the pointer (`s.aiming`), and so does a left
+click that sets its route; any other left click puts the facing back
+(`cancelAim`, which also drops a turn order that changed nothing); a right click
 sets the facing at the pointer and deselects (right-clicking any selected
 unit or deployment does the same); a left click while aiming is an ordinary
 click. Touch has no right click, so there the tap after a route sets the

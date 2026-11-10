@@ -73,7 +73,7 @@ export function renderTopBar(s: ClientState) {
   } else gold.hidden = true;
 }
 
-const AIM_HINT = "Aiming: right-click where it should face (on a touch screen, tap).";
+const AIM_HINT = "It turns to follow the pointer: right-click to set its facing there (on a touch screen, tap). Left-click a highlighted tile to move it.";
 
 /** Gold this player gets at the end of each round: the base amount plus its income sites. */
 function incomePerRound(s: ClientState): number {
@@ -179,9 +179,11 @@ function planningBlock(s: ClientState): string {
       const order = moveOrderFor(s, u.id);
       const facing = order?.facing ?? u.facing;
       const what = order?.path.length ? `Moving ${order.path.length} step${order.path.length === 1 ? "" : "s"}` : order ? "Turning on the spot" : "Holding position";
+      const firedNote = u.fired ? `<p class="small braced-note">Fired last round: it can turn this round, but not move.</p>` : "";
       parts.push(`<div class="panel-section unit-sheet" ${seatStyle(u.seat)}>
   ${unitHeader(s, u)}
   <p class="order-line">${what}, facing ${facingName(facing)} (${facing}°).</p>
+  ${firedNote}
   <div class="facing-row"><span class="faint small">Face</span>${compass(s, facing)}</div>
   <p class="faint small">${s.aiming ? AIM_HINT : "Click a highlighted tile to move there; it then turns to follow the pointer. Right-click to set its facing."}</p>
   ${order ? `<button class="btn btn-ghost btn-sm" data-action="clear-order" data-unit="${u.id}" type="button">Clear order</button>` : ""}

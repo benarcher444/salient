@@ -78,6 +78,12 @@ const reachCache = new WeakMap<Unit, Reach>();
 /** Where a unit can go, avoiding enemies this player can see. */
 export function reachOf(s: ClientState, unit: Unit): Reach {
   let r = reachCache.get(unit);
+  if (!r && unit.fired) {
+    // Fired last round: it may turn, not move. Only its own tile.
+    const everywhereElse = new Set(s.map.terrain.map((_, i) => i).filter((i) => i !== unit.y * s.map.width + unit.x));
+    r = reachable(s.map, unit, everywhereElse);
+    reachCache.set(unit, r);
+  }
   if (!r) {
     const blocked = new Set(s.view!.units.filter((u) => u.seat !== unit.seat).map((u) => u.y * s.map.width + u.x));
     r = reachable(s.map, unit, blocked);

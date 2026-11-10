@@ -108,9 +108,15 @@ export function planOrders(view: PlayerView, random: () => number): Orders {
   const movers = mine.filter((u) => !capturingIds.has(u.id));
   for (const u of movers) {
     const goal = defending.get(u.id) ?? goalFor(u, { posts, income, lostBase, enemyBaseTiles }, enemies, enemyBase, claimed);
+    // A unit that fired last round may only turn.
+    if (u.fired) {
+      claimed.add(k(u));
+      moves.push({ unitId: u.id, path: [], facing: faceThreat(u, enemies, map, goal) });
+      continue;
+    }
     const reach = reachable(map, u, blocked);
     // A sniper with something to shoot holds still rather than spoil its aim.
-    const hasShot = enemies.some((e) => previewShot(map, u, e).possible);
+    const hasShot = enemies.some((e) => previewShot(map, u, e, view.units).possible);
     let best: Point = u;
     let bestScore = hasTrait(u.kind, "steady") && hasShot ? -Infinity : scoreTile(map, u, goal, enemies);
     for (const idx of reach.cost.keys()) {

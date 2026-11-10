@@ -12,9 +12,11 @@ export interface Obstacle {
 export interface SightLine {
   clear: boolean;
   obstacles: Obstacle[];
+  /** The tiles the line passes through, in order, not counting its two ends. */
+  tiles: Point[];
 }
 
-const BLOCKED: SightLine = { clear: false, obstacles: [] };
+const BLOCKED: SightLine = { clear: false, obstacles: [], tiles: [] };
 
 /**
  * Trace the straight line from the centre of tile `a` to the centre of tile `b`.
@@ -34,6 +36,7 @@ export function traceLine(map: MapDef, a: Point, b: Point): SightLine {
   const adx = Math.abs(dx);
   const ady = Math.abs(dy);
   const obstacles: Obstacle[] = [];
+  const tiles: Point[] = [];
   let x = a.x;
   let y = a.y;
   let crossedX = 0; // vertical grid lines crossed so far
@@ -75,8 +78,9 @@ export function traceLine(map: MapDef, a: Point, b: Point): SightLine {
     const t = terrainAt(map, x, y);
     if (TERRAIN[t].blocksSight) return BLOCKED;
     if (t === "crate" || t === "forest") obstacles.push({ kind: t, at: { x, y } });
+    tiles.push({ x, y });
   }
-  return { clear: true, obstacles };
+  return { clear: true, obstacles, tiles };
 }
 
 function noteEdge(edge: EdgeKind | null, beyond: Point, obstacles: Obstacle[]): boolean {

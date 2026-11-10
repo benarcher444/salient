@@ -313,19 +313,22 @@ function warnBaseLoss(events: GameEvent[]) {
 
 // --- Taps on the board -------------------------------------------------------------
 
-/** A tap on a tile, from the pointer or (Enter) the keyboard cursor. */
-function onTap(p: Point, pointer = false) {
+/** How a tap came: a mouse, a finger or pen, or Enter on the keyboard cursor. */
+type Input = "mouse" | "touch" | "key";
+
+/** A tap on a tile. */
+function onTap(p: Point, input: Input = "key") {
   const v = s.view;
   if (!v) return;
   resignAsked = false;
   const u = unitAt(s, p);
-  if (canPlan(s)) planningTap(p, u, pointer);
+  if (canPlan(s)) planningTap(p, u, input);
   else if (v.phase === "attack" && isMyAttackTurn(s)) attackTap(u);
   else s.selected = u ? { type: "unit", id: u.id } : null;
   refresh();
 }
 
-function planningTap(p: Point, u: Unit | undefined, pointer: boolean) {
+function planningTap(p: Point, u: Unit | undefined, input: Input) {
   const sel = s.selected;
   const selUnit = sel?.type === "unit" ? unitById(s, sel.id) : undefined;
   if (selUnit && isMine(s, selUnit)) {
@@ -342,6 +345,9 @@ function planningTap(p: Point, u: Unit | undefined, pointer: boolean) {
   }
   if (u && isMine(s, u)) {
     s.selected = { type: "unit", id: u.id };
+    // With a mouse the unit turns to follow the pointer straight away: a
+    // right click sets that facing, a left click on a tile moves it instead.
+    if (input === "mouse") startAim();
     return;
   }
   if (selUnit && isMine(s, selUnit) && !u) {
@@ -355,8 +361,8 @@ function planningTap(p: Point, u: Unit | undefined, pointer: boolean) {
         existing.path = path;
         existing.facing = facing;
       } else s.draft.moves.push({ unitId: selUnit.id, path, facing });
-      // With the mouse, the unit then turns to follow the pointer until the next click.
-      if (pointer) startAim();
+      // It then turns to follow the pointer (a right click, or on a touch screen the next tap, sets it).
+      if (input !== "key") startAim();
       return;
     }
   }
@@ -533,6 +539,14 @@ function startAim() {
 function cancelAim() {
   if (s.aiming) aimTarget()?.set(s.aiming.before);
   s.aiming = null;
+  // Following the pointer may have made a turn-on-the-spot order; one that
+  // ends up facing where the unit already does is no order at all.
+  const sel = s.selected;
+  if (sel?.type === "unit") {
+    const u = unitById(s, sel.id);
+    const order = u && moveOrderFor(s, u.id);
+    if (u && order && order.path.length === 0 && order.facing === u.facing) s.draft.moves = s.draft.moves.filter((m) => m !== order);
+  }
 }
 
 function showTooltip(tile: Point, sx: number, sy: number) {
@@ -582,10 +596,10 @@ attachGestures(canvas, board.camera, {
         return;
       }
       // A left click while aiming is an ordinary click (a new route, another
-      // unit); the facing keeps what the pointer last set.
-      s.aiming = null;
+      // unit), and only a right click sets a facing: put it back first.
+      cancelAim();
     }
-    if (p) onTap(p, true);
+    if (p) onTap(p, pointerType === "mouse" ? "mouse" : "touch");
   },
   hover: onHover,
   changed: () => {

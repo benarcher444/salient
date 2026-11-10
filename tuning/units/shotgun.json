@@ -3,7 +3,7 @@
   "role": "Wide spread, rarely misses, brutal up close. Weak past a few tiles.",
   "cost": 110,
   "hp": 110,
-  "move": 5,
+  "move": 4,
   "sight": 7,
   "range": 4,
   "optimal": 2,

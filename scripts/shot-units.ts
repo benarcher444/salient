@@ -18,8 +18,8 @@ const units = [];
 let id = 1;
 UNIT_KINDS.forEach((kind, i) => {
   // Seat 0 on one row, seat 1 below it, each class turned a different way.
-  units.push({ id: id++, seat: 0, kind, x: 3 + i * 2, y: 4, facing: (i * 40) % 360, hp: UNITS[kind].hp, moved: false, damaged: false });
-  units.push({ id: id++, seat: 1, kind, x: 3 + i * 2, y: 6, facing: (i * 40 + 180) % 360, hp: Math.round(UNITS[kind].hp * 0.45), moved: false, damaged: false });
+  units.push({ id: id++, seat: 0, kind, x: 3 + i * 2, y: 4, facing: (i * 40) % 360, hp: UNITS[kind].hp, moved: false, damaged: false, fired: false });
+  units.push({ id: id++, seat: 1, kind, x: 3 + i * 2, y: 6, facing: (i * 40 + 180) % 360, hp: Math.round(UNITS[kind].hp * 0.45), moved: false, damaged: false, fired: false });
 });
 const view = {
   mapId: map.id, seat: 0, round: 3, phase: "attack", seats: [], gold: 0, units,

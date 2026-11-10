@@ -364,7 +364,7 @@ export class Board {
 
     // The selected unit's reach and the route to the hovered tile.
     const sel = s.selected;
-    if (canPlan(s) && sel?.type === "unit" && !s.aiming) {
+    if (canPlan(s) && sel?.type === "unit") {
       const u = unitById(s, sel.id);
       if (u && isMine(s, u)) {
         const reach = reachOf(s, u);
@@ -392,7 +392,7 @@ export class Board {
       this.arc(end.x + 0.5, end.y + 0.5, u.kind, m.facing, mine, 0.1);
     }
     orders.spawns.forEach((sp, i) => {
-      const fake: Unit = { id: -1 - i, seat, kind: sp.kind, x: sp.x, y: sp.y, facing: sp.facing, hp: UNITS[sp.kind].hp, moved: false, damaged: false };
+      const fake: Unit = { id: -1 - i, seat, kind: sp.kind, x: sp.x, y: sp.y, facing: sp.facing, hp: UNITS[sp.kind].hp, moved: false, damaged: false, fired: false };
       const selected = sel?.type === "spawn" && sel.index === i;
       this.token(fake, sp.x + 0.5, sp.y + 0.5, facingAngle(sp.facing), 0.6, { ghost: true, selected, badge: "+" });
       this.arc(sp.x + 0.5, sp.y + 0.5, sp.kind, sp.facing, mine, selected ? 0.14 : 0.07);

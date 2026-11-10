@@ -3,7 +3,7 @@
   "role": "Fast, far-sighted, fragile. Finds targets for others.",
   "cost": 70,
   "hp": 70,
-  "move": 7,
+  "move": 6,
   "sight": 11,
   "range": 6,
   "optimal": 3,

@@ -3,7 +3,7 @@
   "role": "A rifleman who makes the units around him shoot better.",
   "cost": 150,
   "hp": 100,
-  "move": 5,
+  "move": 4,
   "sight": 8,
   "range": 8,
   "optimal": 5,

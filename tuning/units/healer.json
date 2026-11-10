@@ -3,7 +3,7 @@
   "role": "Heals units within 2 tiles every round. Carries a pistol.",
   "cost": 100,
   "hp": 80,
-  "move": 5,
+  "move": 4,
   "sight": 8,
   "range": 5,
   "optimal": 3,

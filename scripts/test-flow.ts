@@ -102,13 +102,16 @@ async function marchAll(page: Page, goal: { x: number; y: number }) {
     if (best) {
       chosen.push(`${best.x},${best.y}`);
       await tapTile(page, best.x, best.y);
-      if (!aimChecked) check("a left click sets the route and the unit then follows the pointer", (await page.textContent("#panel"))?.includes("Aiming") ?? false);
+      if (!aimChecked) check("a left click sets the route and the unit then follows the pointer", (await page.textContent("#panel"))?.includes("follow the pointer") ?? false);
       await tapTile(page, goal.x, goal.y, "right");
       if (!aimChecked) {
         const panel = (await page.textContent("#panel")) ?? "";
-        check("a right click sets the facing and deselects", !panel.includes("Aiming") && !panel.includes("Moving"), panel.slice(0, 120));
+        check("a right click sets the facing and deselects", !panel.includes("follow the pointer") && !panel.includes("Moving"), panel.slice(0, 120));
       }
       aimChecked = true;
+    } else {
+      // Nowhere to go (it fired last round, say): just turn it to face the goal.
+      await tapTile(page, goal.x, goal.y, "right");
     }
     await page.keyboard.press("Escape"); // deselect
   }

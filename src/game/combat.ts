@@ -14,7 +14,7 @@ export interface Modifier {
   factor: number;
 }
 
-export type ShotBlock = "unarmed" | "out_of_range" | "outside_arc" | "no_line_of_sight" | "same_side";
+export type ShotBlock = "unarmed" | "out_of_range" | "outside_arc" | "no_line_of_sight" | "enemy_in_way" | "same_side";
 
 export interface ShotPreview {
   possible: boolean;
@@ -39,6 +39,7 @@ export const BLOCK_TEXT: Record<ShotBlock, string> = {
   out_of_range: "Out of range",
   outside_arc: "Outside firing arc",
   no_line_of_sight: "No line of sight",
+  enemy_in_way: "Another enemy is in the way",
   same_side: "Friendly",
 };
 
@@ -72,8 +73,10 @@ export function commanded(shooter: Unit, units: readonly Unit[]): boolean {
 /**
  * Everything about a shot short of rolling the dice. Visibility (can this
  * seat see the target at all, including stealth) is checked by the caller;
- * this covers range, arc, the sight line and the numbers. `units` is anyone
- * who might be standing nearby: it is how an officer's presence is found.
+ * this covers range, arc, the sight line and the numbers. `units` is everyone
+ * the caller knows of: an enemy standing on the line blocks the shot (your
+ * own side's units don't: you shoot past them), and it is how an officer's
+ * presence is found.
  */
 export function previewShot(map: MapDef, shooter: Unit, target: Unit, units: readonly Unit[] = []): ShotPreview {
   const stats = UNITS[shooter.kind];
@@ -88,6 +91,10 @@ export function previewShot(map: MapDef, shooter: Unit, target: Unit, units: rea
   if (!inArc(shooter, target)) return { ...base, block: "outside_arc" };
   const line = traceLine(map, shooter, target);
   if (!line.clear) return { ...base, block: "no_line_of_sight" };
+  const inTheWay = units.some(
+    (u) => u.seat !== shooter.seat && u.id !== target.id && line.tiles.some((p) => p.x === u.x && p.y === u.y),
+  );
+  if (inTheWay) return { ...base, block: "enemy_in_way" };
 
   const modifiers: Modifier[] = [];
   let chance = stats.accuracy;
