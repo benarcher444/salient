@@ -241,14 +241,40 @@ export function leaveGame(id: string, userId: number): boolean {
   const game = db.select().from(games).where(eq(games.id, id)).get();
   if (!game || game.startedAt) return false;
   if (game.createdBy === userId) {
-    db.delete(games).where(eq(games.id, id)).run();
-    cache.delete(id);
-    for (const l of listeners.get(id) ?? []) l({ game, map: mapFor(game), tuning: tuningFor(game), players: [], state: null, actionCount: 0 }, []);
+    removeGame(game);
     return true;
   }
   db.delete(gamePlayers).where(and(eq(gamePlayers.gameId, id), eq(gamePlayers.userId, userId))).run();
   refresh(id);
   return true;
+}
+
+export type DeleteResult = "deleted" | "not_found" | "not_allowed";
+
+/**
+ * Delete a game outright, whatever its stage: its players and its whole log
+ * go with it (they cascade). Only the player who created it may.
+ */
+export function deleteGame(id: string, userId: number): DeleteResult {
+  const game = db.select().from(games).where(eq(games.id, id)).get();
+  if (!game) return "not_found";
+  if (game.createdBy !== userId) return "not_allowed";
+  removeGame(game);
+  return "deleted";
+}
+
+/**
+ * Remove a game row (players and actions cascade), stop its bot timer, drop
+ * it from the cache, and tell anyone watching it, whose pages then show it
+ * has gone.
+ */
+function removeGame(game: Game) {
+  db.delete(games).where(eq(games.id, game.id)).run();
+  const timer = botTimers.get(game.id);
+  if (timer) clearTimeout(timer);
+  botTimers.delete(game.id);
+  cache.delete(game.id);
+  for (const l of listeners.get(game.id) ?? []) l({ game, map: mapFor(game), tuning: tuningFor(game), players: [], state: null, actionCount: 0 }, []);
 }
 
 /** An action as the client sends it: everything but the seat, which the server fills in. */

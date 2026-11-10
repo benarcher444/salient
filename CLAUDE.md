@@ -49,6 +49,7 @@ None of its code did.
 | `npm run seed` / `npm run unseed` | Add / remove the demo accounts (`scripts/demo.ts`) and their games |
 | `npm run set-password -- <email> <pw>` | Replace a password (they cannot be recovered) |
 | `npm run unlock -- <email>` | Unlock an account after five wrong passwords |
+| `npm run delete-games -- --in-play` | Delete every unfinished game (or `-- <id>...`; `--dry-run` lists). Restart the server after |
 | `npm run backup` | Consistent database copy into `data/backups/` |
 | `npm run db:generate` | Generate a migration after editing `src/db/schema.ts` |
 
@@ -214,6 +215,12 @@ battle's `?` overlay and the How to play page; the handling is `onKey` in
 `src/client/game.ts`, so change both together. Enter, Space and Tab are left
 alone on a focused button or link. Key hints are hidden on touch screens and
 narrow windows.
+
+**A game's creator can delete it at any stage** (the lobby card's Delete,
+then a confirm page: no browser pop-ups), for everyone in it; its players and
+log cascade. `removeGame` in `games.ts` also stops its bot timer, drops it
+from the cache and tells open pages it has gone. Nobody else can, and there
+is no admin: `npm run delete-games` on the server is the owner's tool.
 
 **Theme on the account**, stamped into `<html>` at render: no flash. The
 battle page re-reads the palette when the device scheme changes.

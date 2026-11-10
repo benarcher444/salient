@@ -261,6 +261,7 @@ a:hover { text-decoration-color: currentColor; }
 
 .alert { padding: 10px 12px; border-radius: var(--radius); border: 1px solid; font-size: 0.92rem; }
 .alert-danger { background: var(--danger-soft); border-color: var(--danger-border); color: var(--danger); }
+.card.narrow { max-width: 560px; }
 .alert-ok { background: var(--ok-soft); border-color: var(--ok-border); color: var(--ok); margin-bottom: 16px; }
 
 .field { display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: 0.88rem; }

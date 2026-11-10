@@ -6,10 +6,10 @@ import { currentUser, requireUser } from "../context.js";
 import { mapForNewGame, listMaps } from "../saved-maps.js";
 import { ERROR_TEXT, RuleError, type Facing, type Orders } from "../game/types.js";
 import { eventsFor, viewFor, type PlayerView } from "../game/view.js";
-import { act, createGame, gamesFor, inGame, joinGame, leaveGame, loadGame, openGames, subscribe, type ClientAction, type LiveGame } from "../games.js";
+import { act, createGame, deleteGame, gamesFor, inGame, joinGame, leaveGame, loadGame, openGames, subscribe, type ClientAction, type LiveGame } from "../games.js";
 import { clientMessage } from "../protocol.js";
 import { battlePage } from "../views/game-view.js";
-import { lobbyPage, notFoundPage, waitingRoom } from "../views/pages.js";
+import { deleteGamePage, lobbyPage, notFoundPage, waitingRoom } from "../views/pages.js";
 
 const html = "text/html; charset=utf-8";
 
@@ -17,9 +17,12 @@ export function gameRoutes(app: FastifyInstance) {
   app.get("/", (request, reply) => {
     const user = requireUser(request, reply);
     if (!user) return reply;
-    const error = (request.query as Record<string, string | undefined>).error;
+    const query = request.query as Record<string, string | undefined>;
     const ownMaps = listMaps(user.id).filter((e) => e.problems.length === 0).map((e) => e.map);
-    return reply.type(html).send(lobbyPage(user, gamesFor(user.id), openGames(user.id), ownMaps, error === "full" ? "That game has already filled up." : undefined));
+    const notice = query.deleted ? "Game deleted." : undefined;
+    return reply
+      .type(html)
+      .send(lobbyPage(user, gamesFor(user.id), openGames(user.id), ownMaps, query.error === "full" ? "That game has already filled up." : undefined, notice));
   });
 
   app.post("/games", (request, reply) => {
@@ -60,6 +63,23 @@ export function gameRoutes(app: FastifyInstance) {
     if (result === "not_found") return reply.code(404).type(html).send(notFoundPage(user));
     if (result === "full") return reply.redirect("/?error=full");
     return reply.redirect(`/g/${id}`);
+  });
+
+  // Deleting asks first, on a page of its own (no browser pop-up), then posts.
+  app.get("/g/:id/delete", (request, reply) => {
+    const user = requireUser(request, reply);
+    if (!user) return reply;
+    const live = loadGame((request.params as { id: string }).id);
+    if (!live || live.game.createdBy !== user.id) return reply.code(404).type(html).send(notFoundPage(user));
+    return reply.type(html).send(deleteGamePage(user, live));
+  });
+
+  app.post("/g/:id/delete", (request, reply) => {
+    const user = requireUser(request, reply);
+    if (!user) return reply;
+    const result = deleteGame((request.params as { id: string }).id, user.id);
+    if (result !== "deleted") return reply.code(404).type(html).send(notFoundPage(user));
+    return reply.redirect("/?deleted=1");
   });
 
   app.post("/g/:id/leave", (request, reply) => {

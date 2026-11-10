@@ -288,6 +288,20 @@ await alex.page.click('[data-action="resign-ask"]');
 await alex.page.click('[data-action="resign"]');
 await waitFor(alex.page, "game over", async () => (await hooks(alex.page, (h) => h.phase()))?.phase === "over");
 
+console.log("\nDeleting a game\n");
+const doomed = new URL(alex.page.url()).pathname.split("/").pop()!;
+await alex.page.goto(`${BASE}/`);
+check("the creator sees Delete on the game's card", (await alex.page.locator(`a[href="/g/${doomed}/delete"]`).count()) === 1);
+await alex.page.click(`a[href="/g/${doomed}/delete"]`);
+check("deleting asks first, on its own page", (await alex.page.textContent("h1"))?.includes("Delete this game?") ?? false);
+await Promise.all([alex.page.waitForURL((u) => u.pathname === "/"), alex.page.click('button:has-text("Delete game")')]);
+check("then the game is gone from the lobby", (await alex.page.locator(`a[href="/g/${doomed}"]`).count()) === 0);
+check("with a note saying so", (await alex.page.textContent(".alert-ok"))?.includes("deleted") ?? false);
+const gone = await alex.page.goto(`${BASE}/g/${doomed}`);
+check("and its page is not found", gone?.status() === 404, String(gone?.status()));
+const notMine = await sam.page.goto(`${BASE}${new URL(gameUrl).pathname}/delete`);
+check("someone who didn't create a game can't delete it", notMine?.status() === 404, String(notMine?.status()));
+
 await browser.close();
 console.log(`\n${failures === 0 ? "It works." : `${failures} problem(s).`}\n`);
 if (failures > 0) process.exit(1);

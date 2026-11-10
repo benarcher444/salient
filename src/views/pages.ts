@@ -5,7 +5,7 @@ import type { User } from "../db/schema.js";
 import { MAPS } from "../game/maps.js";
 import { RULES } from "../game/constants.js";
 import { seatName } from "../game/seats.js";
-import type { GameSummary } from "../games.js";
+import type { GameSummary, LiveGame } from "../games.js";
 import type { MapDef } from "../game/types.js";
 import { mapThumbnail, playerList, seatChip, unitCards } from "./components.js";
 import { icons } from "./icons.js";
@@ -43,12 +43,18 @@ function statusPill(s: GameSummary): Html {
   return `<span class="pill">Round ${g.round} · ${g.phase === "attack" ? "attacks" : "planning"}</span>`;
 }
 
-function gameCard(s: GameSummary, join = false): Html {
+function gameCard(s: GameSummary, join = false, userId?: number): Html {
   const map = s.map;
   const players = s.players.map((p) => seatChip(p.seat, p.name)).join("");
-  const action = join
+  const open = join
     ? `<form method="post" action="/g/${esc(s.game.id)}/join"><button class="btn btn-primary btn-sm" type="submit">Join</button></form>`
     : `<a class="btn btn-sm${s.yourMove ? " btn-primary" : ""}" href="/g/${esc(s.game.id)}">${s.game.status === "over" ? "Review" : "Open"}</a>`;
+  // The creator can delete a game at any stage; it asks first.
+  const remove =
+    !join && userId !== undefined && s.game.createdBy === userId
+      ? `<a class="btn btn-ghost btn-sm" href="/g/${esc(s.game.id)}/delete" aria-label="Delete game #${esc(s.game.id)}">Delete</a>`
+      : "";
+  const action = `<div class="btn-row">${remove}${open}</div>`;
   return `<article class="card game-card${s.yourMove ? " your-move" : ""}">
   <a class="game-card-map" href="/g/${esc(s.game.id)}" tabindex="-1">${map ? mapThumbnail(map, false) : ""}</a>
   <div class="game-card-body">
@@ -59,7 +65,7 @@ function gameCard(s: GameSummary, join = false): Html {
 </article>`;
 }
 
-export function lobbyPage(user: User, mine: GameSummary[], open: GameSummary[], ownMaps: MapDef[], error?: string): Html {
+export function lobbyPage(user: User, mine: GameSummary[], open: GameSummary[], ownMaps: MapDef[], error?: string, notice?: string): Html {
   const active = mine.filter((s) => s.game.status !== "over");
   const finished = mine.filter((s) => s.game.status === "over");
   const mapOptions = [...MAPS, ...ownMaps].map(
@@ -71,15 +77,16 @@ export function lobbyPage(user: User, mine: GameSummary[], open: GameSummary[], 
 
   const body = `${pageHead({ title: "Your games", sub: `Signed in as ${user.displayName}.` })}
 ${error ? `<p class="alert alert-danger" role="alert">${esc(error)}</p>` : ""}
+${notice ? `<p class="alert alert-ok" role="status">${esc(notice)}</p>` : ""}
 <div class="lobby">
   <section class="lobby-main stack">
     ${
       active.length
-        ? `<div class="game-list">${active.map((s) => gameCard(s)).join("")}</div>`
+        ? `<div class="game-list">${active.map((s) => gameCard(s, false, user.id)).join("")}</div>`
         : `<div class="card empty"><div class="empty-icon">${icons.flag}</div><h3>No games yet</h3><p>Start a new game below and send the link to a friend, or join an open one.</p></div>`
     }
     ${open.length ? `<h2 class="section-title">Open games</h2><div class="game-list">${open.map((s) => gameCard(s, true)).join("")}</div>` : ""}
-    ${finished.length ? `<h2 class="section-title">Finished</h2><div class="game-list">${finished.map((s) => gameCard(s)).join("")}</div>` : ""}
+    ${finished.length ? `<h2 class="section-title">Finished</h2><div class="game-list">${finished.map((s) => gameCard(s, false, user.id)).join("")}</div>` : ""}
   </section>
   <aside class="lobby-side">
     <form class="card" method="post" action="/games" id="new-game">
@@ -199,6 +206,24 @@ export function rulesPage(user: User | null): Html {
   ${unitCards()}
 </div>`;
   return layout({ title: "How to play", body, user, active: "rules" });
+}
+
+/** "Delete this game?": its map, its players and how far it got, then Delete or Keep. */
+export function deleteGamePage(user: User, live: LiveGame): Html {
+  const g = live.game;
+  const stage = g.status === "open" ? "waiting for players" : g.status === "over" ? "finished" : `in round ${g.round}`;
+  const others = live.players.filter((p) => p.userId !== user.id && !p.isBot);
+  const body = `${pageHead({ title: "Delete this game?", sub: `${live.map.name} · #${g.id} · ${stage}` })}
+<div class="card narrow"><div class="card-body stack">
+  <div class="waiting-map">${mapThumbnail(live.map, false)}</div>
+  <div class="chips">${live.players.map((p) => seatChip(p.seat, p.name)).join("")}</div>
+  <p>The game and its whole history are deleted for everyone in it${others.length ? `, including ${others.map((p) => esc(p.name)).join(", ")}` : ""}. This can't be undone.</p>
+  <div class="btn-row">
+    <form method="post" action="/g/${esc(g.id)}/delete"><button class="btn btn-danger" type="submit">Delete game</button></form>
+    <a class="btn" href="/">Keep it</a>
+  </div>
+</div></div>`;
+  return layout({ title: "Delete game", body, user });
 }
 
 export function notFoundPage(user: User | null): Html {
