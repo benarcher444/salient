@@ -128,7 +128,10 @@ when an enemy stands on one. Only enemies the shooter's side can see count
 (`knownTo` in `rules.ts`): the browser and the bots know exactly those, so
 they never offer a shot the server refuses, and a refusal never betrays an
 unseen unit. (The first version used every unit on the server; the
-simulator caught bots losing their whole attack phase to such refusals.) The rule looks only at the current
+simulator caught bots losing their whole attack phase to such refusals.)
+An unseen enemy on the line is not ignored, though: it takes the shot
+(`attack` rolls against the nearest one, and the event carries
+`intendedId`), so hiding a unit never lets shots pass through it. The rule looks only at the current
 tick, so the result never depends on unit order. Attack turns go round the
 table one unit at a time; the first shooter rotates each round; a seat with
 nothing in reach is skipped automatically. A unit with more than one shot

@@ -116,6 +116,7 @@ export function eventsFor(
           e.targetSeat === seat ||
           known.has(e.shooterId) ||
           known.has(e.targetId) ||
+          (e.intendedId !== undefined && known.has(e.intendedId)) ||
           e.splash.some((x) => x.seat === seat || known.has(x.unitId))
         );
       default:

@@ -7,6 +7,7 @@ import { blastTiles, previewShot, rollShot } from "./combat.js";
 import { facingToward, samePoint } from "./grid.js";
 import { getMap } from "./maps.js";
 import { validatePath } from "./movement.js";
+import { traceLine } from "./los.js";
 import { UNITS, UNIT_KINDS, hasTrait } from "./units.js";
 import { isArmed } from "./combat.js";
 import { baseTiles, baseTilesOwned, isSpawnTile, unitVisibleTo, visibleTiles } from "./visibility.js";
@@ -423,11 +424,21 @@ function attack(
   const shooter = ownUnit(state, seat, unitId);
   if (state.actedUnitIds.includes(shooter.id)) throw new RuleError("already_acted");
   if (state.burst && state.burst.unitId !== shooter.id) throw new RuleError("finish_burst");
-  const target = state.units.find((u) => u.id === targetId);
-  if (!target) throw new RuleError("no_such_unit");
-  if (!targetsFor(map, state, shooter).includes(target)) throw new RuleError("cannot_shoot");
+  const aimedAt = state.units.find((u) => u.id === targetId);
+  if (!aimedAt) throw new RuleError("no_such_unit");
+  const known = knownTo(map, state, seat);
+  if (!targetsFor(map, state, shooter).includes(aimedAt)) throw new RuleError("cannot_shoot");
 
-  const preview = previewShot(map, shooter, target, knownTo(map, state, seat));
+  // An enemy the shooter's side can't see (a stealthy commando, someone in
+  // the fog mid-way along a long shot) and that stands on the line takes the
+  // shot instead: the nearest such one. Otherwise hiding a unit would let
+  // shots pass through it.
+  const line = traceLine(map, shooter, aimedAt);
+  const hidden = line.tiles
+    .map((p) => state.units.find((u) => u.x === p.x && u.y === p.y && u.seat !== seat && !known.includes(u)))
+    .find((u): u is Unit => !!u);
+  const target = hidden ?? aimedAt;
+  const preview = previewShot(map, shooter, target, known);
   const result = rollShot(preview, roll(), roll());
   const fired = state.burst?.unitId === shooter.id ? state.burst.fired + 1 : 1;
   const hurt = (u: Unit, damage: number) => {
@@ -469,6 +480,7 @@ function attack(
     damage: result.damage,
     killed,
     splash,
+    ...(hidden ? { intendedId: aimedAt.id } : {}),
   });
   // Losing your last unit with no base tiles left knocks you out at once.
   let out = false;

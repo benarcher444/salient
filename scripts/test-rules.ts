@@ -419,6 +419,22 @@ section("Units on the line of fire");
   const st = stateOn("shoot-open", [shooter, target, enemyBetween]);
   check("so the target behind it isn't a target at all", !targetsFor(m, st, at(st, 1)!).some((t) => t.id === 2));
 }
+{
+  // A stealthy commando 4 tiles off (unseen beyond stealthRange) on the line:
+  // the target is offered, but the shot strikes the commando instead.
+  const m = board("shoot-unseen", () => {}, 14, 12);
+  const shooter = unit(1, 0, "rifleman", 1, 5, { facing: E });
+  const target = unit(2, 1, "rifleman", 7, 5, { facing: W });
+  const sneak = unit(3, 1, "commando", 5, 5, { facing: W });
+  const st = stateOn("shoot-unseen", [shooter, target, sneak]);
+  st.phase = "attack";
+  st.attackTurn = 0;
+  check("an unseen enemy on the line doesn't stop the target being offered", targetsFor(m, st, at(st, 1)!).some((t) => t.id === 2));
+  const r = applyAction(st, { type: "attack", seat: 0, unitId: 1, targetId: 2 }, roll(0));
+  const shot = r.events.find((e) => e.type === "shot");
+  check("but the shot strikes the unseen enemy in the way", shot?.type === "shot" && shot.targetId === 3 && shot.intendedId === 2 && shot.hit, JSON.stringify(shot));
+  check("which takes the damage, not the target", at(r.state, 3)!.hp < UNITS.commando.hp && at(r.state, 2)!.hp === UNITS.rifleman.hp);
+}
 
 section("Simultaneous movement");
 

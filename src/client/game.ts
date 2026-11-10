@@ -256,7 +256,13 @@ function logEvent(e: GameEvent, round: number) {
       break;
     case "shot": {
       const target = name(e.targetId).replace(/^Your/, "your");
-      html = e.hit
+      if (e.intendedId !== undefined) {
+        // The shot was taken by an enemy its side couldn't see, standing in the way.
+        const struck = knownUnits.has(e.targetId) && e.targetSeat === seat ? target : "an unseen enemy";
+        html = `${name(e.shooterId)} fired at ${name(e.intendedId).replace(/^Your/, "your")}, but ${struck} was in the way: ${
+          e.hit ? `${e.crit ? "a critical hit" : "hit"} for <strong>${e.damage}</strong>${e.killed ? ", killing it" : ""}` : "missed"
+        }.`;
+      } else html = e.hit
         ? `${name(e.shooterId)} ${e.crit ? "landed a critical hit on" : "hit"} ${target} for <strong>${e.damage}</strong>${e.killed ? ", killing it" : ""}.`
         : `${name(e.shooterId)} missed ${target} (${Math.round(e.chance * 100)}%).`;
       // An explosive's blast: everyone it caught, the target too on a miss.

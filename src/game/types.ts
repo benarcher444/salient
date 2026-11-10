@@ -176,6 +176,11 @@ export type GameEvent =
       killed: boolean;
       /** Explosives: the units caught by the blast (the target too, on a miss). */
       splash: { unitId: number; seat: Seat; at: Point; damage: number; killed: boolean }[];
+      /**
+       * Set when an enemy the shooter couldn't see stood on the line and took
+       * the shot: the unit it was aimed at. `targetId` is the one it struck.
+       */
+      intendedId?: number;
     }
   | { type: "hold"; unitId: number; seat: Seat }
   | { type: "capture"; site: "post" | "income" | "base"; index: number; from: Seat | null; to: Seat | null }
