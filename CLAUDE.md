@@ -237,6 +237,22 @@ battle's `?` overlay and the How to play page; the handling is `onKey` in
 alone on a focused button or link. Key hints are hidden on touch screens and
 narrow windows.
 
+**A finished game can be replayed, fog lifted, from its log.** The owner
+wanted to watch how a whole game played out. `GET /g/:id/replay` sends the
+log and seed, and only once the game is over (`replayLog` in `games.ts`
+returns null otherwise; the route answers 403): a game in progress's log is
+everyone's moves, fog or no fog. The browser rebuilds it with
+`replaySteps` (`src/game/replay.ts`: one step per action that changed
+something, `viewFor(state, null)` for each) under the game's own tuning, map
+and dice, so it is exactly what happened, and plays the steps through the
+same `anim.ingest` as a live update: one every 2 s (by speed), or when its
+animation ends. `s.replay` holds the position; while it is set nothing is
+sent and live updates wait (`heldMessage`) until it ends. Started by "Watch
+the replay" at the end of a game, or the lobby's Replay (`?replay=1`).
+Guests may fetch their own game's replay (`guest-paths.ts`). Pinned in
+`scripts/test-rules.ts` (a bot game's replay ends exactly where it did) and
+`test:flow`.
+
 **A game's creator can delete it at any stage** (the lobby card's Delete,
 then a confirm page: no browser pop-ups), for everyone in it; its players and
 log cascade. `removeGame` in `games.ts` also stops its bot timer, drops it
@@ -375,6 +391,11 @@ every snapshot fail the checker, and the server died at boot resuming bots.
 `upgradeSnapshot` now fills fields a snapshot lacks from the files
 (`fillIn`), and `resumeBots` skips a game that won't load. Pinned in
 `scripts/test-rules.ts`.
+
+**The editor's panel is not in `.side`.** The battle's panel moved into a
+`.side` column with the minimap, and the phone height cap moved with it; the
+editor's `.panel` lost it and covered its own canvas on a phone (the editor
+suite's touch tap landed on the panel). `.editor-panel` carries its own.
 
 **PowerShell 5.1 reads files as ANSI.** `Get-Content` then a write turned
 every —, ×, ° in this file into mojibake. Edit files with the editor tools

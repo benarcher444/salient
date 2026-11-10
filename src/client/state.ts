@@ -52,6 +52,12 @@ export interface ClientState {
    * until a tap sets it. `before` is the facing to go back to on cancel.
    */
   aiming: { before: Facing; selection: string } | null;
+  /**
+   * Watching a finished game again, fog lifted: which step is showing, of
+   * how many, whether it plays on by itself and how fast. null otherwise.
+   * While set, `view` is the replay's, and nothing is sent to the server.
+   */
+  replay: { index: number; total: number; playing: boolean; speed: number; loading?: boolean } | null;
 }
 
 export const emptyOrders = (): Orders => ({ moves: [], spawns: [] });

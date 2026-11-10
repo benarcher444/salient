@@ -54,7 +54,9 @@ function gameCard(s: GameSummary, join = false, userId?: number): Html {
     !join && userId !== undefined && s.game.createdBy === userId
       ? `<a class="btn btn-ghost btn-sm" href="/g/${esc(s.game.id)}/delete" aria-label="Delete game #${esc(s.game.id)}">Delete</a>`
       : "";
-  const action = `<div class="btn-row">${remove}${open}</div>`;
+  // A finished game can be watched again from the start, fog lifted.
+  const replay = !join && s.game.status === "over" ? `<a class="btn btn-sm" href="/g/${esc(s.game.id)}?replay=1">Replay</a>` : "";
+  const action = `<div class="btn-row">${remove}${replay}${open}</div>`;
   return `<article class="card game-card${s.yourMove ? " your-move" : ""}">
   <a class="game-card-map" href="/g/${esc(s.game.id)}" tabindex="-1">${map ? mapThumbnail(map, false) : ""}</a>
   <div class="game-card-body">
@@ -198,6 +200,8 @@ export function rulesPage(user: User | null): Html {
       <li><strong>Income sites</strong> pay +25 gold a round, on top of everyone's +${RULES.baseIncome}. Only <strong>engineers</strong> can capture them.</li>
       <li><strong>Fog of war:</strong> you only see what your units and the base tiles and posts you hold can see.</li>
     </ul>
+    <h2>Replays</h2>
+    <p>A finished game can be watched again from the start with the fog lifted: <strong>Replay</strong> on its card in your games, or <strong>Watch the replay</strong> at the end of the game. It plays a step every two seconds, with the moves and shots animated; pause it, step back and forth, or speed it up.</p>
     <h2>Reading the board</h2>
     <p>Each class has its own shape, and the white arrow in front of a unit shows which way it faces. A pulsing ring marks your units still to act: in planning, the ones that can move and have no orders yet; in the attack phase, the ones that can fire. Point at any unit, yours or an enemy's, to see its firing arc. A sniper with a tripod badge is braced: it hasn't moved this round, so it shoots at full accuracy. A healer or officer shows the square its help reaches when you point at it.</p>
     <h2>Keyboard</h2>

@@ -166,6 +166,18 @@ export class Animator {
 
   maxHp = (u: Unit) => UNITS[u.kind].hp;
 
+  /** Forget everything in flight: a replay jumping to another step starts clean. */
+  reset() {
+    this.walks.clear();
+    this.appear.clear();
+    this.hpUntil.clear();
+    this.ghosts = [];
+    this.tracers = [];
+    this.floaters = [];
+    this.pulses = [];
+    this.busyUntil = 0;
+  }
+
   /** Drop effects that have finished. */
   prune(now: number) {
     this.ghosts = this.ghosts.filter((g) => now < g.end);

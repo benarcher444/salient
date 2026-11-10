@@ -26,7 +26,7 @@ const view = {
   visible: map.terrain.map((_, i) => i), postOwners: map.posts.map(() => null), incomeOwners: map.income.map(() => null),
   myOrders: null, attackTurn: 1, acted: [], readyShooters: [], burst: null, baseOwners: [], winner: null,
 };
-const s = { boot: {}, map, view, players: [], connected: true, draft: { moves: [], spawns: [] }, editing: false, selected: { type: "unit", id: 5 }, hover: { x: 7, y: 6 }, log: [], pending: false, aiming: null };
+const s = { boot: {}, map, view, players: [], connected: true, draft: { moves: [], spawns: [] }, editing: false, selected: { type: "unit", id: 5 }, hover: { x: 7, y: 6 }, log: [], pending: false, aiming: null, replay: null };
 const canvas = document.getElementById("board");
 const board = new Board(canvas, s);
 board.resize();

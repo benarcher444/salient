@@ -13,6 +13,8 @@ import { applyAction, isFacing, newGame, readyShooters, targetsFor, validateOrde
 import { streamFor } from "../src/game/rng.js";
 import { UNITS, UNIT_KINDS } from "../src/game/units.js";
 import { viewFor } from "../src/game/view.js";
+import { replaySteps, type ReplayLog } from "../src/game/replay.js";
+import { chooseAction } from "../src/game/bot.js";
 import { RuleError, type Action, type GameEvent, type GameState, type MapDef, type Point, type Unit, type UnitKind } from "../src/game/types.js";
 import { RULES } from "../src/game/constants.js";
 import { baseTiles, spawnTiles, visibleTiles } from "../src/game/visibility.js";
@@ -964,6 +966,34 @@ section("Replay");
     return g;
   };
   check("the same seed and actions rebuild the same state", JSON.stringify(script()) === JSON.stringify(script()));
+
+  // Watching it again: two bots play a while; the replay, rebuilt from the
+  // log alone, must end exactly where the game did.
+  const log: ReplayLog = { seed: "replay-seed", seatCount: 2, actions: [] };
+  let g = newGame("crossroads", 2);
+  const botRandom = streamFor("replay-bots", 0);
+  let waited = 0;
+  for (let seq = 0; seq < 400 && g.phase !== "over" && g.round <= 12; ) {
+    let acted = false;
+    for (let seat = 0; seat < 2 && g.phase !== "over"; seat++) {
+      const choice = chooseAction(viewFor(g, seat), botRandom);
+      if (!choice) continue;
+      const action = { ...choice, seat } as Action;
+      const r = applyAction(g, action, streamFor(log.seed, seq));
+      if (r.events.length === 0) waited++;
+      g = r.state;
+      log.actions.push({ seq, action });
+      seq++;
+      acted = true;
+    }
+    if (!acted) break;
+  }
+  const steps = replaySteps("crossroads", log);
+  const last = steps[steps.length - 1]!;
+  check("a replay starts from the empty board", steps[0]!.view.units.length === 0 && steps[0]!.view.round === 1);
+  check("and ends exactly where the game did", JSON.stringify(last.view) === JSON.stringify(viewFor(g, null)), `${last.view.round} vs ${g.round}`);
+  check("one step per action that changed something", steps.length === 1 + log.actions.length - waited, `${steps.length} steps, ${log.actions.length} actions, ${waited} waits`);
+  check("with the fog lifted: every tile visible", last.view.visible.length === getMap("crossroads").width * getMap("crossroads").height);
   const a = streamFor("s", 1)();
   const b = streamFor("s", 2)();
   check("each action gets its own stream", a !== b && a >= 0 && a < 1);

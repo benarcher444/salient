@@ -2,6 +2,7 @@
 // board, panel and top bar in step with the server.
 import { facingName, facingToward, normFacing, samePoint } from "../game/grid.js";
 import { getMap, registerMap } from "../game/maps.js";
+import { replaySteps, type ReplayLog, type ReplayStep } from "../game/replay.js";
 import { useTuning } from "../game/tuning.js";
 import { pathTo } from "../game/movement.js";
 import { UNITS, UNIT_KINDS } from "../game/units.js";
@@ -55,6 +56,7 @@ const s: ClientState = {
   log: [],
   pending: false,
   aiming: null,
+  replay: null,
 };
 
 const canvas = document.getElementById("board") as HTMLCanvasElement;
@@ -149,6 +151,8 @@ function connect() {
 }
 
 function send(action: Record<string, unknown>) {
+  // A replay is only watching: nothing it does reaches the server.
+  if (s.replay) return;
   if (!socket || socket.readyState !== WebSocket.OPEN) return toast("Not connected. Reconnecting…");
   s.pending = true;
   socket.send(JSON.stringify({ type: "action", action }));
@@ -172,6 +176,11 @@ function onMessage(m: ServerMessage) {
   }
   if (m.type === "closed" || m.type === "lobby") {
     location.reload();
+    return;
+  }
+  // During a replay the live game waits: its update is applied on leaving.
+  if (s.replay) {
+    heldMessage = m;
     return;
   }
   const before = s.view;
@@ -211,6 +220,164 @@ function onMessage(m: ServerMessage) {
   announce(before, v);
   warnBaseLoss(m.events);
   refresh();
+  // The lobby's Replay button opens a finished game with ?replay=1.
+  if (!before && v.phase === "over" && autoReplay) {
+    autoReplay = false;
+    void startReplay();
+  }
+}
+
+// --- Replay ---------------------------------------------------------------------------
+// A finished game, watched again from the start with the fog lifted. The
+// server sends the log (only once the game is over); the browser rebuilds
+// every step with the same rules, tuning and dice, and plays them through
+// the same animations as a live game: a step every two seconds, or when its
+// animation finishes if that takes longer.
+
+const REPLAY_STEP_MS = 2000;
+let autoReplay = new URLSearchParams(location.search).get("replay") === "1";
+let steps: ReplayStep[] = [];
+let heldMessage: ServerMessage | null = null;
+let beforeReplay: { view: PlayerView; log: ClientState["log"] } | null = null;
+let replayTimer = 0;
+
+async function startReplay() {
+  if (s.replay || !s.view || s.view.phase !== "over") return;
+  beforeReplay = { view: s.view, log: s.log };
+  s.replay = { index: 0, total: 0, playing: false, speed: 1, loading: true };
+  s.selected = null;
+  s.aiming = null;
+  resignAsked = false;
+  refresh();
+  try {
+    const res = await fetch(`/g/${encodeURIComponent(boot.gameId)}/replay`, { headers: { accept: "application/json" } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    steps = replaySteps(boot.mapId, (await res.json()) as ReplayLog);
+  } catch {
+    s.replay = null;
+    beforeReplay = null;
+    toast("The replay couldn't be loaded.");
+    refresh();
+    return;
+  }
+  // Names for the log: every unit that ever took the field.
+  for (const step of steps) {
+    for (const u of step.view.units) knownUnits.set(u.id, { seat: u.seat, kind: u.kind });
+    for (const e of step.events) if (e.type === "spawn") knownUnits.set(e.unit.id, e.unit);
+  }
+  s.replay = { index: 0, total: steps.length, playing: true, speed: 1 };
+  replayJump(0);
+  scheduleReplay();
+}
+
+/** Show a step at once, without animation (going back, or to the start). */
+function replayJump(i: number) {
+  const r = s.replay!;
+  r.index = Math.max(0, Math.min(steps.length - 1, i));
+  board.anim.reset();
+  s.view = steps[r.index]!.view;
+  s.log = [];
+  for (let k = 1; k <= r.index; k++) for (const e of steps[k]!.events) logEvent(e, steps[k]!.round);
+  tooltip.hidden = true;
+  refresh();
+}
+
+/** Play the next step, animated, as a live update would be. */
+function replayAdvance() {
+  const r = s.replay!;
+  if (r.index >= steps.length - 1) return;
+  const before = s.view!;
+  const step = steps[++r.index]!;
+  board.anim.ingest(before, step.view, step.events, performance.now());
+  s.view = step.view;
+  for (const e of step.events) logEvent(e, step.round);
+  tooltip.hidden = true;
+  const delay = Math.max(0, board.anim.busyUntil - performance.now());
+  const shown = step.view;
+  if (step.view.phase === "over") {
+    const w = step.view.winner;
+    window.setTimeout(() => s.view === shown && showBanner(w === null ? "Draw" : `${playerName(s, w)} wins`, "The end of the replay", "win", 2500), delay);
+  } else if (step.view.round !== before.round) {
+    window.setTimeout(() => s.view === shown && showBanner(`Round ${step.view.round}`, "", "info", Math.min(1600, REPLAY_STEP_MS / r.speed)), delay);
+  }
+  refresh();
+}
+
+/** While playing, the next step comes after REPLAY_STEP_MS (by speed), or once the animation ends. */
+function scheduleReplay() {
+  window.clearTimeout(replayTimer);
+  const r = s.replay;
+  if (!r || !r.playing) return;
+  if (r.index >= steps.length - 1) {
+    r.playing = false;
+    refresh();
+    return;
+  }
+  const wait = Math.max(REPLAY_STEP_MS / r.speed, board.anim.busyUntil - performance.now() + 200);
+  replayTimer = window.setTimeout(() => {
+    if (!s.replay?.playing) return;
+    replayAdvance();
+    scheduleReplay();
+  }, wait);
+}
+
+function replayControl(action: string): boolean {
+  const r = s.replay;
+  if (!r || r.loading) return false;
+  switch (action) {
+    case "replay-play":
+      if (r.index >= steps.length - 1) replayJump(0);
+      r.playing = true;
+      scheduleReplay();
+      break;
+    case "replay-pause":
+      r.playing = false;
+      window.clearTimeout(replayTimer);
+      break;
+    case "replay-forward":
+      window.clearTimeout(replayTimer);
+      replayAdvance();
+      scheduleReplay();
+      break;
+    case "replay-back":
+      r.playing = false;
+      window.clearTimeout(replayTimer);
+      replayJump(r.index - 1);
+      break;
+    case "replay-restart":
+      window.clearTimeout(replayTimer);
+      replayJump(0);
+      scheduleReplay();
+      break;
+    case "replay-speed":
+      r.speed = r.speed >= 4 ? 1 : r.speed * 2;
+      scheduleReplay();
+      break;
+    case "replay-exit":
+      exitReplay();
+      break;
+    default:
+      return false;
+  }
+  return true;
+}
+
+/** Back to the game as it ended, and to anything the server sent meanwhile. */
+function exitReplay() {
+  window.clearTimeout(replayTimer);
+  s.replay = null;
+  steps = [];
+  board.anim.reset();
+  if (beforeReplay) {
+    s.view = beforeReplay.view;
+    s.log = beforeReplay.log;
+  }
+  beforeReplay = null;
+  s.selected = null;
+  refresh();
+  const held = heldMessage;
+  heldMessage = null;
+  if (held) onMessage(held);
 }
 
 function announce(before: PlayerView | null, v: PlayerView) {
@@ -249,7 +416,10 @@ function logEvent(e: GameEvent, round: number) {
       html = e.unit.seat === seat ? `You deployed a ${UNITS[e.unit.kind].name.toLowerCase()}.` : `${who(e.unit.seat)} deployed a ${UNITS[e.unit.kind].name.toLowerCase()}.`;
       break;
     case "spawnFailed":
-      html = `Your ${UNITS[e.kind].name.toLowerCase()} couldn't deploy: something was on the tile. No gold spent.`;
+      html =
+        e.seat === seat
+          ? `Your ${UNITS[e.kind].name.toLowerCase()} couldn't deploy: something was on the tile. No gold spent.`
+          : `${who(e.seat)}'s ${UNITS[e.kind].name.toLowerCase()} couldn't deploy: something was on the tile.`;
       break;
     case "move":
       if (e.bumped) html = `${name(e.unitId)} ran into something and stopped.`;
@@ -420,6 +590,14 @@ panel.addEventListener("click", (e) => {
   const el = (e.target as HTMLElement).closest<HTMLElement>("[data-action]");
   if (!el) return;
   const action = el.dataset.action!;
+  if (action === "replay-start") {
+    void startReplay();
+    return;
+  }
+  if (replayControl(action)) {
+    refresh();
+    return;
+  }
   const sel = s.selected;
   switch (action) {
     case "buy": {
@@ -731,6 +909,14 @@ function finish() {
 
 function onKey(e: KeyboardEvent): boolean {
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  // During a replay: Space plays or pauses, the side arrows step, Esc leaves.
+  // Everything else (zoom, the cursor up and down, ?) works as usual.
+  if (s.replay && !s.replay.loading) {
+    if (key === " ") return replayControl(s.replay.playing ? "replay-pause" : "replay-play");
+    if (key === "ArrowRight") return replayControl("replay-forward");
+    if (key === "ArrowLeft") return replayControl("replay-back");
+    if (key === "Escape" && keyHelp.hidden) return replayControl("replay-exit");
+  }
   if (key === "?" || (key === "/" && e.shiftKey)) {
     keyHelp.hidden = !keyHelp.hidden;
     return true;
@@ -882,6 +1068,7 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
   phase: () => s.view && { phase: s.view.phase, round: s.view.round, attackTurn: s.view.attackTurn, ready: s.view.seats.map((p) => p.ready) },
   busy: () => board.anim.animating,
   hover: () => s.hover,
+  replay: () => s.replay && { index: s.replay.index, total: s.replay.total, playing: s.replay.playing, units: s.view?.units.length ?? 0 },
 };
 
 board.resize();

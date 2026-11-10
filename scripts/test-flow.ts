@@ -26,6 +26,7 @@ interface Hooks {
   phase(): { phase: string; round: number; attackTurn: number | null; ready: boolean[] } | null;
   busy(): boolean;
   log(): string[];
+  replay(): { index: number; total: number; playing: boolean; units: number } | null;
 }
 // The hooks appear once the page's module has run, a moment after the HTML.
 const hooks = <T>(page: Page, fn: (h: Hooks) => T) =>
@@ -290,9 +291,46 @@ if (!botFired) check("the bot fires at you when it has a shot", false, "no bot s
 await alex.page.screenshot({ path: "screenshots/flow-bot.png" });
 const left = alex.errors.filter((e) => !e.includes("403"));
 check("no console errors in the bot game", left.length === 0, left.slice(0, 2).join(" | "));
+const botGame = new URL(alex.page.url()).pathname;
+const early = await alex.page.request.get(`${BASE}${botGame}/replay`);
+check("a game in progress has no replay to fetch (it would show through the fog)", early.status() === 403, String(early.status()));
 await alex.page.click('[data-action="resign-ask"]');
 await alex.page.click('[data-action="resign"]');
 await waitFor(alex.page, "game over", async () => (await hooks(alex.page, (h) => h.phase()))?.phase === "over");
+
+console.log("\nWatching the replay\n");
+await alex.page.click('[data-action="replay-start"]');
+await waitFor(alex.page, "the replay to load", async () => ((await hooks(alex.page, (h) => h.replay()))?.total ?? 0) > 2);
+const r0 = (await hooks(alex.page, (h) => h.replay()))!;
+check("Watch the replay rebuilds the game from the start", r0.total > 2, `${r0.total} steps, at ${r0.index}`);
+check("the top bar says it's a replay", (await alex.page.textContent("#phase-label"))?.startsWith("Replay") ?? false);
+await waitFor(alex.page, "a step to play by itself", async () => ((await hooks(alex.page, (h) => h.replay()))?.index ?? 0) >= 1, 6000);
+await waitFor(alex.page, "units to take the field", async () => ((await hooks(alex.page, (h) => h.replay()))?.units ?? 0) > 0, 15_000);
+const playing = (await hooks(alex.page, (h) => h.replay()))!;
+check("it plays on by itself, units and all", playing.index >= 1 && playing.units > 0, JSON.stringify(playing));
+await alex.page.waitForTimeout(400);
+await alex.page.screenshot({ path: "screenshots/flow-replay.png" });
+await alex.page.click('[data-action="replay-pause"]');
+const paused = (await hooks(alex.page, (h) => h.replay()))!;
+await alex.page.locator("body").focus();
+await alex.page.keyboard.press("ArrowRight");
+const ahead = (await hooks(alex.page, (h) => h.replay()))!;
+check("→ steps forward", ahead.index === paused.index + 1 && !ahead.playing, `${paused.index} -> ${ahead.index}`);
+await alex.page.keyboard.press("ArrowLeft");
+check("← steps back", (await hooks(alex.page, (h) => h.replay()))!.index === paused.index);
+await alex.page.click('[data-action="replay-restart"]');
+check("Back to the start shows the empty board", (await hooks(alex.page, (h) => h.replay()))!.units === 0);
+const sent = alex.errors.length;
+await alex.page.keyboard.press("Escape");
+check("Esc leaves the replay, back to the end of the game", !(await hooks(alex.page, (h) => h.replay())) && (await hooks(alex.page, (h) => h.phase()))?.phase === "over");
+check("no errors while replaying", alex.errors.length === sent, alex.errors.slice(sent).join(" | "));
+await alex.page.goto(`${BASE}/`);
+const replayLink = alex.page.locator(`a[href="${botGame}?replay=1"]`);
+check("a finished game's card has Replay", (await replayLink.count()) === 1);
+await replayLink.click();
+await waitFor(alex.page, "the replay to start from the lobby", async () => ((await hooks(alex.page, (h) => h.replay()))?.total ?? 0) > 2, 10_000);
+check("which opens the game straight into its replay", ((await hooks(alex.page, (h) => h.replay()))?.total ?? 0) > 2);
+await alex.page.goto(`${BASE}${botGame}`);
 
 console.log("\nDeleting a game\n");
 const doomed = new URL(alex.page.url()).pathname.split("/").pop()!;

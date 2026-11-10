@@ -13,6 +13,7 @@ import { applyAction, newGame } from "./game/rules.js";
 import { chooseAction } from "./game/bot.js";
 import { FILE_TUNING, TUNING_VERSION, upgradeSnapshot, withTuning, type Tuning } from "./game/tuning.js";
 import { viewFor } from "./game/view.js";
+import type { ReplayLog } from "./game/replay.js";
 import { RuleError, type Action, type GameEvent, type GameState, type MapDef, type Seat, type UnitKind } from "./game/types.js";
 
 export interface PlayerInfo {
@@ -94,6 +95,27 @@ function upgradeAction(action: Action): Action {
       moves: action.orders.moves.map((m) => ({ ...m, facing: m.facing * 45 })),
       spawns: action.orders.spawns.map((s) => ({ ...s, kind: kind(s.kind), facing: s.facing * 45 })),
     },
+  };
+}
+
+/**
+ * A finished game's whole log, for watching it again. Only ever for a game
+ * that is over: the log of a game in progress would show everyone's moves
+ * through the fog. null otherwise. Older games' actions come upgraded, as
+ * the server's own replay sees them.
+ */
+export function replayLog(id: string): ReplayLog | null {
+  const live = loadGame(id);
+  if (!live?.state || live.state.phase !== "over") return null;
+  const legacy = isLegacy(live.game);
+  const rows = db.select().from(gameActions).where(eq(gameActions.gameId, id)).orderBy(asc(gameActions.seq)).all();
+  return {
+    seed: live.game.seed,
+    seatCount: live.game.seatCount,
+    actions: rows.map((row) => {
+      const action = JSON.parse(row.payload) as Action;
+      return { seq: row.seq, action: legacy ? upgradeAction(action) : action };
+    }),
   };
 }
 

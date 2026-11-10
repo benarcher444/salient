@@ -49,8 +49,8 @@ export function renderTopBar(s: ClientState) {
     phaseLabel.textContent = s.connected ? "Loading…" : "Connecting…";
     return;
   }
-  phaseLabel.textContent =
-    v.phase === "over" ? "Game over" : `Round ${v.round} · ${v.phase === "planning" ? "Planning" : "Attacks"}`;
+  const stage = v.phase === "over" ? "Game over" : `Round ${v.round} · ${v.phase === "planning" ? "Planning" : "Attacks"}`;
+  phaseLabel.textContent = s.replay ? `Replay · ${stage}` : stage;
   board.innerHTML = v.seats
     .map((p) => {
       const turn = v.phase === "attack" && v.attackTurn === p.seat;
@@ -106,6 +106,16 @@ export function renderPanel(s: ClientState): string {
   const seat = mySeat(s);
   const parts: string[] = [];
 
+  if (s.replay) {
+    parts.push(replayBlock(s));
+    const sel = s.selected;
+    if (sel?.type === "unit") {
+      const u = unitById(s, sel.id);
+      if (u) parts.push(unitDetail(s, u));
+    }
+    parts.push(logBlock(s));
+    return parts.join("");
+  }
   parts.push(statusBlock(s));
   if (v.phase === "planning" && seat !== null) parts.push(planningBlock(s));
   if (v.phase === "attack" && seat !== null) parts.push(attackBlock(s));
@@ -126,6 +136,30 @@ export function renderPanel(s: ClientState): string {
   return parts.join("");
 }
 
+/** The replay's controls: where it is, play and pause, a step either way, speed. */
+function replayBlock(s: ClientState): string {
+  const r = s.replay!;
+  const v = s.view!;
+  if (r.loading) return `<div class="panel-section status"><h2>Replay</h2><p>Loading the game…</p></div>`;
+  const at = r.index === 0 ? "The start" : v.phase === "over" ? "The end" : `Round ${v.round} · ${v.phase === "planning" ? "planning" : "attacks"}`;
+  const btn = (action: string, label: string, aria: string, disabled = false, extra = "") =>
+    `<button class="btn${extra}" type="button" data-action="${action}" aria-label="${aria}" title="${aria}"${disabled ? " disabled" : ""}>${label}</button>`;
+  return `<div class="panel-section status replay">
+  <h2>Replay</h2>
+  <p id="replay-where">${at} · step ${r.index} of ${r.total - 1}. The fog is lifted: you see every side.</p>
+  <div class="replay-progress" role="progressbar" aria-label="Replay progress" aria-valuemin="0" aria-valuemax="${r.total - 1}" aria-valuenow="${r.index}"><span style="width:${Math.round((r.index / Math.max(1, r.total - 1)) * 100)}%"></span></div>
+  <div class="btn-row replay-controls">
+    ${btn("replay-restart", "⏮", "Back to the start", r.index === 0)}
+    ${btn("replay-back", "◀", "Back a step", r.index === 0)}
+    ${btn(r.playing ? "replay-pause" : "replay-play", r.playing ? "Pause" : "Play", r.playing ? "Pause" : "Play", false, " btn-primary grow")}
+    ${btn("replay-forward", "▶", "Forward a step", r.index >= r.total - 1)}
+    ${btn("replay-speed", `${r.speed}×`, `Speed ${r.speed}×: change it`)}
+  </div>
+  <p class="faint small keys-only">${kbd("Space")} play or pause · ${kbd("←")} ${kbd("→")} a step · ${kbd("Esc")} leave</p>
+  <button class="btn btn-ghost btn-sm" data-action="replay-exit" type="button">Leave the replay</button>
+</div>`;
+}
+
 function statusBlock(s: ClientState): string {
   const v = s.view!;
   const seat = mySeat(s);
@@ -134,7 +168,9 @@ function statusBlock(s: ClientState): string {
   if (v.phase === "over") {
     title = v.winner === null ? "Draw" : v.winner === seat ? "Victory" : `${esc(playerName(s, v.winner))} wins`;
     sub = v.winner === seat ? "The field is yours." : "The fog has lifted. Look around the whole map.";
-    return `<div class="panel-section status status-over"><h2>${title}</h2><p>${sub}</p><a class="btn btn-primary" href="/">Back to your games</a></div>`;
+    return `<div class="panel-section status status-over"><h2>${title}</h2><p>${sub}</p>
+  <button class="btn btn-primary" data-action="replay-start" type="button">Watch the replay</button>
+  <a class="btn" href="/">Back to your games</a></div>`;
   }
   if (seat !== null && v.seats[seat]?.eliminated) {
     return `<div class="panel-section status"><h2>You're out</h2><p>You lost your last base tile and your last unit. You can keep watching your own side's view.</p></div>`;
