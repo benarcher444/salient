@@ -552,9 +552,12 @@ export class Board {
       const acted = v.phase === "attack" && v.acted.includes(u.id);
       const isSel = (sel?.type === "unit" && sel.id === u.id) || (sel?.type === "target" && (sel.shooterId === u.id || sel.targetId === u.id));
       const moving = !!moveOrderFor(s, u.id)?.path.length && v.phase === "planning";
+      // The same pulse marks, in planning, your units that could move and
+      // have no orders yet, and in the attack phase the ones that can fire.
+      const awaitingOrders = canPlan(s) && isMine(s, u) && !u.fired && !moveOrderFor(s, u.id);
       this.token(u, p.x, p.y, p.angle, p.alpha * (acted ? 0.6 : 1), {
         selected: isSel,
-        ready: myTurn && ready.has(u.id) && !acted,
+        ready: (myTurn && ready.has(u.id) && !acted) || awaitingOrders,
         hp: this.anim.hp(u, now),
         now,
         moving,

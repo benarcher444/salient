@@ -16,7 +16,7 @@
   "longRangeAccuracy": 0.65,
   "flank": {
     "front": 1,
-    "side": 1.25,
+    "side": 1,
     "rear": 1.5
   },
   "traits": {
