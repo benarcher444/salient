@@ -4,6 +4,7 @@ import type { WebSocket } from "ws";
 import { z } from "zod";
 import { currentUser, requireUser } from "../context.js";
 import { mapForNewGame, listMaps } from "../saved-maps.js";
+import { BOT_LEVELS } from "../game/bot.js";
 import { ERROR_TEXT, RuleError, type Facing, type Orders } from "../game/types.js";
 import { eventsFor, viewFor, type PlayerView } from "../game/view.js";
 import { act, createGame, deleteGame, gamesFor, inGame, joinGame, leaveGame, loadGame, openGames, replayLog, subscribe, type ClientAction, type LiveGame } from "../games.js";
@@ -30,12 +31,17 @@ export function gameRoutes(app: FastifyInstance) {
     const user = requireUser(request, reply);
     if (!user) return reply;
     const parsed = z
-      .object({ map: z.string(), seats: z.coerce.number().int().min(2).max(4), opponents: z.enum(["people", "bots"]).default("people") })
+      .object({
+        map: z.string(),
+        seats: z.coerce.number().int().min(2).max(4),
+        opponents: z.enum(["people", "bots"]).default("people"),
+        level: z.enum(BOT_LEVELS).default("regular"),
+      })
       .safeParse(request.body);
     // A built-in map, or one of this user's own maps that is playable.
     const map = parsed.success ? mapForNewGame(parsed.data.map, user.id) : null;
     if (!parsed.success || !map) return reply.code(400).send({ error: "bad_request" });
-    const id = createGame(user.id, map, Math.min(parsed.data.seats, map.seats), parsed.data.opponents === "bots");
+    const id = createGame(user.id, map, Math.min(parsed.data.seats, map.seats), parsed.data.opponents === "bots", parsed.data.level);
     return reply.redirect(`/g/${id}`);
   });
 

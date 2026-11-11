@@ -71,6 +71,12 @@ export const games = sqliteTable("games", {
    * first shown; replacing it kills every older link.
    */
   inviteToken: text("invite_token"),
+  /**
+   * How well this game's computer opponents play (src/game/bot.ts BotLevel).
+   * Chosen when the game is made against the computer; every bot seat plays
+   * at it. Games from before levels are Regular, which is how they played.
+   */
+  botLevel: text("bot_level", { enum: ["novice", "regular", "veteran"] }).notNull().default("regular"),
 });
 
 /** Maps people have made in the editor. `data` is the MapDef as JSON. */

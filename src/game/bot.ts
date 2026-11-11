@@ -14,12 +14,33 @@
 //              counts what it does to everyone it catches, its own side
 //              against it, and a shot that would hurt it more than the enemy
 //              is not taken.
-import { blastTiles, previewShot } from "./combat.js";
+//
+// That is the Regular bot. Every game picks one of three levels (BotLevel),
+// and the level only ever changes the *decisions*: every level gets the same
+// PlayerView. Novice and Veteran are Regular with these differences:
+//   Novice:    buys from a flat mix (poor picks included), at most two units a
+//              round, no engineer first; wanders (big random jitter in where it
+//              goes, a quarter of its units just hold still), never sends
+//              anyone home to defend; a third of its shots go at a random
+//              target, and now and then it holds fire for the round.
+//   Veteran:   shoots to kill: a target's worth is what it costs and what it
+//              can do, the chance the shot finishes it counts, and wounded
+//              enemies come first; raiders on its posts count too. Moves weigh
+//              what each tile can shoot at against how much the enemies it
+//              sees could hit it there, stays near its own, and faces the enemy
+//              it can best shoot. Buys to counter what it sees (shotguns and
+//              heavies against riots, commandos against snipers), keeps one
+//              engineer only while there is income it can reach safely.
+//              (Saving up to deploy in pairs, pulling the wounded back and
+//              keeping units from going forward alone were all tried in the
+//              simulator, and none of them won more games.)
+import { blastTiles, damageRange, isArmed, previewShot } from "./combat.js";
+import { RULES } from "./constants.js";
 import { DIRS, TERRAIN, distance, edgeAt, facingToward, inBounds, terrainAt } from "./grid.js";
 import { getMap } from "./maps.js";
 import { pathTo, reachable } from "./movement.js";
 import { targetsFor, validateOrders } from "./rules.js";
-import { UNITS, hasTrait } from "./units.js";
+import { UNITS, UNIT_KINDS, hasTrait } from "./units.js";
 import { baseTiles, spawnTiles } from "./visibility.js";
 import { stateFromView, type PlayerView } from "./view.js";
 import type { Facing, MapDef, MoveOrder, Orders, Point, SpawnOrder, Unit, UnitKind } from "./types.js";
@@ -29,6 +50,12 @@ export type BotAction =
   | { type: "orders"; orders: Orders }
   | { type: "attack"; unitId: number; targetId: number }
   | { type: "endAttacks" };
+
+/** How well a computer opponent plays. Chosen per game; Regular is the default. */
+export type BotLevel = "novice" | "regular" | "veteran";
+export const BOT_LEVELS: readonly BotLevel[] = ["novice", "regular", "veteran"];
+export const BOT_LEVEL_NAME: Record<BotLevel, string> = { novice: "Novice", regular: "Regular", veteran: "Veteran" };
+export const isBotLevel = (s: unknown): s is BotLevel => typeof s === "string" && (BOT_LEVELS as readonly string[]).includes(s);
 
 /** Below this hit chance a bot holds fire (see chooseShot). */
 const MIN_SHOT_CHANCE = 0.2;
@@ -47,18 +74,47 @@ const MIX: [UnitKind, number][] = [
 ];
 const MAX_DEPLOY_PER_ROUND = 4;
 
+/** A novice shops from every class alike, engineers and unarmed riots included. */
+const NOVICE_MIX: [UnitKind, number][] = UNIT_KINDS.map((k): [UnitKind, number] => [k, 1]);
+/**
+ * A novice's handicaps: units a round, the jitter in where it goes (Regular's
+ * is 0.3, against a tile's score of about one per tile of distance), the share
+ * of units that just stand still, of shots at a random target, of turns it
+ * holds fire for the round.
+ */
+const NOVICE = { maxDeploy: 2, noise: 2.5, holdStill: 0.25, randomShot: 0.35, holdFire: 0.05 };
+
+/** A veteran's shopping before it counters anything: riflemen, officers to lead them, heavies and shotguns. */
+const VETERAN_MIX: [UnitKind, number][] = [
+  ["rifleman", 5],
+  ["officer", 2],
+  ["shotgun", 2],
+  ["heavy", 2],
+  ["sniper", 1],
+  ["healer", 1],
+  ["commando", 1],
+  ["scout", 0.5],
+];
+/**
+ * How a veteran weighs a tile, per 30 damage expected (a rifleman's hit): the
+ * best shot it could take from there, against the shots the enemies it sees
+ * could take at it there, plus a little for friends close by. Tried in the
+ * simulator: more weight on danger made it win no more and stall more often.
+ */
+const VETERAN = { offense: 0.9, danger: 0.4, company: 0.25, companyMax: 0.75 };
+
 /** Is it this seat's move, and if so what should it do? null = nothing to do. */
-export function chooseAction(view: PlayerView, random: () => number = Math.random): BotAction | null {
+export function chooseAction(view: PlayerView, random: () => number = Math.random, level: BotLevel = "regular"): BotAction | null {
   const seat = view.seat;
   if (seat === null || view.phase === "over" || view.seats[seat]?.eliminated) return null;
-  if (view.phase === "planning") return view.seats[seat]!.ready ? null : { type: "orders", orders: planOrders(view, random) };
-  if (view.attackTurn === seat) return chooseShot(view);
+  if (view.phase === "planning") return view.seats[seat]!.ready ? null : { type: "orders", orders: planOrders(view, random, level) };
+  if (view.attackTurn === seat) return chooseShot(view, random, level);
   return null;
 }
 
 // --- Planning ------------------------------------------------------------------------
 
-export function planOrders(view: PlayerView, random: () => number): Orders {
+export function planOrders(view: PlayerView, random: () => number, level: BotLevel = "regular"): Orders {
   const map = getMap(view.mapId);
   const state = stateFromView(view);
   const seat = view.seat!;
@@ -67,6 +123,7 @@ export function planOrders(view: PlayerView, random: () => number): Orders {
   const blocked = new Set(enemies.map((e) => e.y * map.width + e.x));
   const claimed = new Set<string>();
   const k = (p: Point) => `${p.x},${p.y}`;
+  const tactics = level === "veteran" ? new Tactics(map, view, mine, enemies) : null;
 
   // Sites still to take. A post we already own is done; the enemy's or a
   // neutral one is a target. Income sites matter to engineers only. Base
@@ -79,6 +136,7 @@ export function planOrders(view: PlayerView, random: () => number): Orders {
   const ownBase = bases.filter((_, i) => view.baseOwners[i] === seat);
   const enemyBase = centreOf(enemyBaseTiles);
   const on = (ps: Point[], u: Point) => ps.some((p) => p.x === u.x && p.y === u.y);
+  const facing = (u: Unit, at: Point, goal?: Point) => tactics?.bestFacing(u, at) ?? faceThreat(at, enemies, map, goal);
 
   const moves: MoveOrder[] = [];
   // Units already standing on a site they are taking stay put, and claim it.
@@ -87,18 +145,22 @@ export function planOrders(view: PlayerView, random: () => number): Orders {
       on(posts, u) || on(lostBase, u) || on(enemyBaseTiles, u) || (hasTrait(u.kind, "engineer") && on(income, u));
     if (capturing) {
       claimed.add(k(u));
-      moves.push({ unitId: u.id, path: [], facing: faceThreat(u, enemies, map) });
+      moves.push({ unitId: u.id, path: [], facing: facing(u, u) });
     }
   }
   const capturingIds = new Set(moves.map((m) => m.unitId));
 
   // Defence: for each base tile of ours an enemy is closing on, the nearest
   // free unit goes to stand on it (a defender on the tile blocks the capture).
+  // A novice doesn't notice.
   const defending = new Map<number, Point>();
-  const threatened = ownBase
-    .filter((t) => enemies.some((e) => distance(e, t) <= DEFEND_RADIUS))
-    .sort((a, b) => nearestEnemy(a, enemies) - nearestEnemy(b, enemies))
-    .slice(0, MAX_DEFENDERS);
+  const threatened =
+    level === "novice"
+      ? []
+      : ownBase
+          .filter((t) => enemies.some((e) => distance(e, t) <= DEFEND_RADIUS))
+          .sort((a, b) => nearestEnemy(a, enemies) - nearestEnemy(b, enemies))
+          .slice(0, level === "veteran" ? MAX_DEFENDERS + 1 : MAX_DEFENDERS);
   for (const t of threatened) {
     const guard = mine
       .filter((u) => !capturingIds.has(u.id) && !defending.has(u.id))
@@ -111,17 +173,19 @@ export function planOrders(view: PlayerView, random: () => number): Orders {
   const movers = mine.filter((u) => !capturingIds.has(u.id));
   for (const u of movers) {
     const goal = defending.get(u.id) ?? goalFor(u, { posts, income, lostBase, enemyBaseTiles }, enemies, enemyBase, claimed);
-    // A unit that fired last round may only turn.
-    if (u.fired) {
+    // A unit that fired last round may only turn. A novice's sometimes just stays.
+    if (u.fired || (level === "novice" && random() < NOVICE.holdStill)) {
       claimed.add(k(u));
-      moves.push({ unitId: u.id, path: [], facing: faceThreat(u, enemies, map, goal) });
+      moves.push({ unitId: u.id, path: [], facing: facing(u, u, goal) });
       continue;
     }
     const reach = reachable(map, u, blocked);
     // A sniper with something to shoot holds still rather than spoil its aim.
     const hasShot = enemies.some((e) => previewShot(map, u, e, view.units).possible);
+    const score = (p: Point) => scoreTile(map, p, goal, enemies) + (tactics?.score(u, p) ?? 0);
     let best: Point = u;
-    let bestScore = hasTrait(u.kind, "steady") && hasShot ? -Infinity : scoreTile(map, u, goal, enemies);
+    let bestScore = hasTrait(u.kind, "steady") && hasShot ? -Infinity : score(u);
+    const noise = level === "novice" ? NOVICE.noise : 0.3;
     for (const idx of reach.cost.keys()) {
       const p = { x: idx % map.width, y: Math.floor(idx / map.width) };
       if (claimed.has(k(p))) continue;
@@ -130,19 +194,19 @@ export function planOrders(view: PlayerView, random: () => number): Orders {
       // Never aim for a teammate's tile, even one that may move off it: if it
       // ends up staying, two units would be ordered onto one tile.
       if (mine.some((o) => o.id !== u.id && o.x === p.x && o.y === p.y)) continue;
-      const score = scoreTile(map, p, goal, enemies) + random() * 0.3;
-      if (score > bestScore) {
-        bestScore = score;
+      const s = score(p) + random() * noise;
+      if (s > bestScore) {
+        bestScore = s;
         best = p;
       }
     }
     claimed.add(k(best));
     const path = best.x === u.x && best.y === u.y ? [] : (pathTo(map, reach, best) ?? []);
     const at = path.length ? path[path.length - 1]! : u;
-    moves.push({ unitId: u.id, path, facing: faceThreat(at, enemies, map, goal) });
+    moves.push({ unitId: u.id, path, facing: facing({ ...u, moved: path.length > 0 }, at, goal) });
   }
 
-  const spawns = planSpawns(view, map, mine, claimed, random);
+  const spawns = planSpawns(view, map, mine, claimed, random, level);
   const orders: Orders = { moves, spawns };
   try {
     validateOrders(map, state, seat, orders);
@@ -216,7 +280,76 @@ function faceThreat(at: Point, enemies: Unit[], map: MapDef, fallback?: Point): 
   return facingToward(at, toward);
 }
 
-function planSpawns(view: PlayerView, map: MapDef, mine: Unit[], claimed: Set<string>, random: () => number): SpawnOrder[] {
+/**
+ * A veteran's sense of the ground, from the enemies it can see: how much they
+ * could hit a unit of ours on a tile (if they turned to it: they plan their
+ * facings too), how much that unit could hit them from there, and company.
+ * Their positions now stand in for where they will be: it knows no more.
+ */
+class Tactics {
+  private dangerCache = new Map<string, number>();
+  constructor(
+    private map: MapDef,
+    private view: PlayerView,
+    private mine: Unit[],
+    private enemies: Unit[],
+  ) {}
+
+  /** Expected damage the enemies it sees could do to `u` standing at `p`. */
+  danger(u: Unit, p: Point): number {
+    const key = `${u.kind},${p.x},${p.y}`;
+    const cached = this.dangerCache.get(key);
+    if (cached !== undefined) return cached;
+    const target: Unit = { ...u, x: p.x, y: p.y };
+    let total = 0;
+    for (const e of this.enemies) {
+      if (!isArmed(e.kind) || distance(e, p) > UNITS[e.kind].range) continue;
+      // Facing it, it takes them from the front; they turn to it too.
+      const shot = previewShot(this.map, { ...e, facing: facingToward(e, p) }, { ...target, facing: facingToward(p, e) });
+      if (shot.possible) total += shot.chance * shot.damage * UNITS[e.kind].shots;
+    }
+    this.dangerCache.set(key, total);
+    return total;
+  }
+
+  /** The best shot `u` could take from `p`, as expected damage weighed by the target's worth, and at whom. */
+  offense(u: Unit, p: Point): { value: number; target: Unit | null } {
+    let best = { value: 0, target: null as Unit | null };
+    if (!isArmed(u.kind)) return best;
+    const moved = u.moved || p.x !== u.x || p.y !== u.y;
+    for (const e of this.enemies) {
+      if (distance(e, p) > UNITS[u.kind].range) continue;
+      const from: Unit = { ...u, x: p.x, y: p.y, moved, facing: facingToward(p, e) };
+      const shot = previewShot(this.map, from, e, this.view.units);
+      if (!shot.possible) continue;
+      const value = shot.chance * Math.min(shot.damage, e.hp) * UNITS[u.kind].shots * (worth(e) / 100);
+      if (value > best.value) best = { value, target: e };
+    }
+    return best;
+  }
+
+  score(u: Unit, p: Point): number {
+    const near = this.mine.filter((o) => o.id !== u.id && distance(o, p) <= 2.5).length;
+    return (
+      (VETERAN.offense * this.offense(u, p).value) / 30 -
+      (VETERAN.danger * this.danger(u, p)) / 30 +
+      Math.min(VETERAN.companyMax, near * VETERAN.company)
+    );
+  }
+
+  /** Face the enemy it can best shoot from `at`; null when there is none (the caller faces the nearest). */
+  bestFacing(u: Unit, at: Point): Facing | null {
+    const t = this.offense(u, at).target;
+    return t ? facingToward(at, t) : null;
+  }
+}
+
+/** What an enemy unit is worth taking out: its price, more if it can shoot back. */
+function worth(u: Unit): number {
+  return UNITS[u.kind].cost * (isArmed(u.kind) ? 1 : 0.6);
+}
+
+function planSpawns(view: PlayerView, map: MapDef, mine: Unit[], claimed: Set<string>, random: () => number, level: BotLevel): SpawnOrder[] {
   const seat = view.seat!;
   let gold = view.gold;
   const spawns: SpawnOrder[] = [];
@@ -234,21 +367,49 @@ function planSpawns(view: PlayerView, map: MapDef, mine: Unit[], claimed: Set<st
     .sort((a, b) => urgency(a) - urgency(b));
   const kinds = new Map<UnitKind, number>();
   for (const u of mine) kinds.set(u.kind, (kinds.get(u.kind) ?? 0) + 1);
-  const wantEngineer = map.income.some((_, i) => view.incomeOwners[i] !== seat) && !kinds.get("engineer");
+  const freeIncome = map.income.filter((_, i) => view.incomeOwners[i] !== seat);
+  const wantEngineer =
+    level === "novice"
+      ? false
+      : level === "veteran"
+        ? // Only for income it can take without walking into the enemy.
+          !kinds.get("engineer") && freeIncome.some((s) => nearestEnemy(s, enemies) > DEFEND_RADIUS)
+        : freeIncome.length > 0 && !kinds.get("engineer");
+  const mix = level === "novice" ? NOVICE_MIX : level === "veteran" ? counterMix(enemies) : MIX;
+  const maxDeploy = level === "novice" ? NOVICE.maxDeploy : MAX_DEPLOY_PER_ROUND;
 
   for (const tile of tiles) {
-    if (spawns.length >= MAX_DEPLOY_PER_ROUND) break;
+    if (spawns.length >= maxDeploy) break;
     // Decide what it wants first, then buy it only if it can: otherwise it
     // saves up. Buying the best it can afford meant nothing but scouts, since
     // a round's income rarely covers anything dearer.
     const kind: UnitKind =
-      wantEngineer && !spawns.some((s) => s.kind === "engineer") ? "engineer" : pickWeighted(MIX, random)!;
+      wantEngineer && !spawns.some((s) => s.kind === "engineer") ? "engineer" : pickWeighted(mix, random)!;
     if (UNITS[kind].cost > gold) break;
     gold -= UNITS[kind].cost;
     spawns.push({ kind, x: tile.x, y: tile.y, facing: facingToward(tile, centre) });
     claimed.add(`${tile.x},${tile.y}`);
   }
   return spawns;
+}
+
+/** A veteran's shopping list, shifted by what it can see across the field. */
+function counterMix(enemies: Unit[]): [UnitKind, number][] {
+  const weights = new Map(VETERAN_MIX);
+  const add = (kind: UnitKind, w: number) => weights.set(kind, (weights.get(kind) ?? 0) + w);
+  const count = (kind: UnitKind) => enemies.filter((e) => e.kind === kind).length;
+  // Shields stop shots from the front: blasts and close, wide spreads get round them.
+  add("heavy", 1.5 * count("riot"));
+  add("shotgun", 1.5 * count("riot"));
+  // Snipers are hopeless up close and fragile: send something fast and quiet.
+  add("commando", 1.5 * count("sniper"));
+  add("scout", 0.5 * count("sniper"));
+  // Bunched up, they are a target for a shell.
+  const bunched = enemies.filter((e) => enemies.some((o) => o.id !== e.id && distance(o, e) <= 1.5)).length;
+  add("heavy", 0.5 * bunched);
+  // Shotguns and commandos win up close: outrange them.
+  add("rifleman", count("shotgun") + count("commando"));
+  return [...weights];
 }
 
 function pickWeighted(options: [UnitKind, number][], random: () => number): UnitKind | undefined {
@@ -270,36 +431,72 @@ function centreOf(points: Point[]): Point {
 
 // --- Shooting ---------------------------------------------------------------------------
 
-export function chooseShot(view: PlayerView): BotAction {
+export function chooseShot(view: PlayerView, random: () => number = Math.random, level: BotLevel = "regular"): BotAction {
   const map = getMap(view.mapId);
   const state = stateFromView(view);
   // Enemies standing on base tiles we own are taking them: shoot those first.
-  const ownBase = baseTiles(map, view.seats.length).filter((_, i) => view.baseOwners[i] === view.seat);
+  // A novice doesn't notice.
+  const ownBase = level === "novice" ? [] : baseTiles(map, view.seats.length).filter((_, i) => view.baseOwners[i] === view.seat);
+  // A veteran minds its posts and income sites too.
+  const ownSites = level === "veteran" ? [...map.posts.filter((_, i) => view.postOwners[i] === view.seat), ...map.income.filter((_, i) => view.incomeOwners[i] === view.seat)] : [];
+  const standsOn = (ps: Point[], u: Point) => ps.some((b) => b.x === u.x && b.y === u.y);
   let best: { unitId: number; targetId: number; score: number } | null = null;
+  const options: { unitId: number; targetId: number }[] = [];
   for (const id of view.readyShooters) {
     const shooter = view.units.find((u) => u.id === id);
     if (!shooter) continue;
     for (const target of targetsFor(map, state, shooter)) {
       const p = previewShot(map, shooter, target, view.units);
       const kills = p.damage >= target.hp;
-      const raiding = ownBase.some((b) => b.x === target.x && b.y === target.y);
+      const raiding = standsOn(ownBase, target);
       // Firing pins the shooter down next round, so a long shot isn't free:
       // skip the ones that will almost never land (a riot's shield, from the
       // front), unless the shell bursts anyway or the target is taking our base.
       if (p.chance < MIN_SHOT_CHANCE && p.splash === 0 && !raiding) continue;
-      let score = p.chance * p.damage * (kills ? 2 : 1) * (raiding ? 3 : 1);
+      let score =
+        level === "veteran"
+          ? veteranValue(p, target) * (raiding ? 3 : standsOn(ownSites, target) ? 1.5 : 1)
+          : p.chance * p.damage * (kills ? 2 : 1) * (raiding ? 3 : 1);
       if (p.splash > 0) {
         for (const t of blastTiles(map, target)) {
           const u = view.units.find((o) => o.x === t.x && o.y === t.y);
           if (!u) continue;
           // The target takes the blast only when the shell misses it.
           const share = u === target ? 1 - p.chance : 1;
-          score += (u.seat === view.seat ? -1.5 : 1) * share * p.splash;
+          // A veteran counts a blast the way it counts a shot (see veteranValue).
+          const hurt = level === "veteran" ? (worth(u) * (Math.min(1, p.splash / u.hp) + (p.splash >= u.hp ? 2 : 0))) / 2 : p.splash;
+          score += (u.seat === view.seat ? -1.5 : 1) * share * hurt;
         }
       }
       if (score <= 0) continue;
+      options.push({ unitId: shooter.id, targetId: target.id });
       if (!best || score > best.score) best = { unitId: shooter.id, targetId: target.id, score };
     }
   }
+  if (level === "novice" && options.length) {
+    // A novice sometimes holds fire for no good reason, and often takes
+    // whatever shot it notices first (though never one that only hurts its own side).
+    const roll = random();
+    if (roll < NOVICE.holdFire) return { type: "endAttacks" };
+    if (roll < NOVICE.holdFire + NOVICE.randomShot) {
+      const pick = options[Math.floor(random() * options.length)]!;
+      return { type: "attack", ...pick };
+    }
+  }
   return best ? { type: "attack", unitId: best.unitId, targetId: best.targetId } : { type: "endAttacks" };
+}
+
+/**
+ * What a shot is worth to a veteran: the share of the target's remaining
+ * health it expects to take (so the wounded come first), and the chance of
+ * finishing it, both in proportion to what the target is worth.
+ */
+function veteranValue(p: ReturnType<typeof previewShot>, target: Unit): number {
+  const [lo, hi] = damageRange(p);
+  // The chance a hit kills: a crit's damage, or where the ±variance falls.
+  const ordinary = p.fatal || lo >= target.hp ? 1 : hi < target.hp ? 0 : (hi - target.hp + 1) / (hi - lo + 1);
+  const crit = p.fatal || Math.round(lo * RULES.critMultiplier) >= target.hp ? 1 : Math.round(hi * RULES.critMultiplier) < target.hp ? 0 : 0.5;
+  const kill = p.chance * (RULES.critChance * crit + (1 - RULES.critChance) * ordinary);
+  const share = Math.min(1, (p.chance * p.damage) / target.hp);
+  return (worth(target) * (share + 2 * kill)) / 2;
 }

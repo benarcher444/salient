@@ -279,6 +279,7 @@ a:hover { text-decoration-color: currentColor; }
 
 .seat-chip { --seat: var(--text-faint); display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px 3px 7px; border-radius: 999px; background: color-mix(in srgb, var(--seat) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--seat) 35%, var(--border)); font-size: 0.82rem; font-weight: 650; min-width: 0; }
 .seat-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seat-chip-level { font-weight: 500; color: var(--text-muted); white-space: nowrap; }
 .seat-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--seat); flex: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--seat) 25%, transparent); }
 .seat-dot.hollow { background: transparent; border: 2px dashed var(--seat); box-shadow: none; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -369,7 +370,8 @@ body.bare { height: 100dvh; overflow: hidden; }
 .battle { height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr); }
 .battle-bar { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--border); min-width: 0; }
 .battle-title { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
-.battle-title strong { font-size: 0.98rem; white-space: nowrap; }
+.battle-title strong { font-size: 0.98rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.battle-title .bot-level { font-weight: 500; font-size: 0.82rem; color: var(--text-muted); }
 .battle-title span { font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; }
 .scoreboard { display: flex; gap: 6px; margin-left: auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .score { --seat: var(--text-faint); display: flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: var(--radius); background: var(--surface-2); border: 1px solid var(--border); font-size: 0.82rem; white-space: nowrap; }

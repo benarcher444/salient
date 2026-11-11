@@ -10,7 +10,7 @@ import { gameActions, gamePlayers, games, users, type Game } from "./db/schema.j
 import { getMap, registerMap } from "./game/maps.js";
 import { streamFor } from "./game/rng.js";
 import { applyAction, newGame } from "./game/rules.js";
-import { chooseAction } from "./game/bot.js";
+import { chooseAction, type BotLevel } from "./game/bot.js";
 import { FILE_TUNING, TUNING_VERSION, upgradeSnapshot, withTuning, type Tuning } from "./game/tuning.js";
 import { viewFor } from "./game/view.js";
 import type { ReplayLog } from "./game/replay.js";
@@ -207,10 +207,11 @@ function botUserIds(count: number): number[] {
 
 /**
  * Create a game with the creator in seat 0, on a snapshot of `map`. With
- * `bots`, every other seat is filled with a computer opponent and the game
- * starts at once. The caller checks the map is playable (checkMap).
+ * `bots`, every other seat is filled with a computer opponent, playing at
+ * `botLevel`, and the game starts at once. The caller checks the map is
+ * playable (checkMap).
  */
-export function createGame(userId: number, map: MapDef, seatCount: number, bots = false): string {
+export function createGame(userId: number, map: MapDef, seatCount: number, bots = false, botLevel: BotLevel = "regular"): string {
   if (seatCount < 2 || seatCount > map.seats) throw new Error("bad seat count");
   const id = newGameId();
   const now = Date.now();
@@ -226,6 +227,7 @@ export function createGame(userId: number, map: MapDef, seatCount: number, bots 
         mapData,
         rulesData,
         seatCount,
+        botLevel,
         seed: crypto.randomBytes(16).toString("hex"),
         createdBy: userId,
         createdAt: now,
@@ -361,14 +363,16 @@ export function driveBots(id: string) {
   const live = loadGame(id);
   const state = live?.state;
   if (!live || !state || state.phase === "over") return;
-  const due = inGame(live, () => live.players.find((p) => p.isBot && chooseAction(viewFor(state, p.seat)) !== null));
+  // Every bot in a game plays at the game's level.
+  const level = live.game.botLevel;
+  const due = inGame(live, () => live.players.find((p) => p.isBot && chooseAction(viewFor(state, p.seat), Math.random, level) !== null));
   if (!due) return;
   const timer = setTimeout(() => {
     botTimers.delete(id);
     const now = loadGame(id);
     const current = now?.state;
     if (!now || !current) return;
-    const choice = inGame(now, () => chooseAction(viewFor(current, due.seat)));
+    const choice = inGame(now, () => chooseAction(viewFor(current, due.seat), Math.random, now.game.botLevel));
     if (!choice) return driveBots(id);
     try {
       act(id, due.userId, choice);

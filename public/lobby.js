@@ -15,8 +15,15 @@ if (form) {
       }),
     );
   };
+  // The computer's level only matters against the computer.
+  const level = form.querySelector("#bot-level-field");
+  const syncLevel = () => {
+    if (level) level.hidden = form.querySelector('input[name="opponents"]:checked')?.value !== "bots";
+  };
   form.addEventListener("change", (e) => {
     if (e.target.name === "map") sync();
+    if (e.target.name === "opponents") syncLevel();
   });
   sync();
+  syncLevel();
 }

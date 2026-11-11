@@ -151,7 +151,8 @@ await page.waitForFunction(() => "__editor" in window);
 await Promise.all([page.waitForURL(/\/g\//), page.click("#play")]);
 await page.waitForSelector(".score", { timeout: 10_000 });
 const gameUrl = page.url();
-check("Play it starts a game against the computer on it", (await page.textContent(".battle-title strong")) === "Test ridge");
+// The title is the map's name and, against the computer, its level: Play makes a Regular game.
+check("Play it starts a game against the computer on it", (await page.textContent(".battle-title strong")) === "Test ridge · Regular");
 
 await page.goto(editorUrl);
 await page.waitForFunction(() => "__editor" in window);
@@ -161,7 +162,7 @@ const left = await page.locator(".map-card h3").allTextContents();
 check("deleting removes it from your maps", !left.includes("Test ridge"), left.join(", "));
 await page.goto(gameUrl);
 await page.waitForSelector(".score", { timeout: 10_000 });
-check("the game played on it still opens: it kept its own copy", (await page.textContent(".battle-title strong")) === "Test ridge");
+check("the game played on it still opens: it kept its own copy", (await page.textContent(".battle-title strong")) === "Test ridge · Regular");
 await page.click('[data-action="resign-ask"]');
 await page.click('[data-action="resign"]');
 

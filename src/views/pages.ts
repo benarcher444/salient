@@ -1,4 +1,5 @@
 // Markup for the ordinary pages: sign-in, the lobby, settings, the rules.
+import { BOT_LEVELS, BOT_LEVEL_NAME } from "../game/bot.js";
 import { keyHelpHtml } from "../game/keys.js";
 import { APP_NAME } from "../config.js";
 import type { User } from "../db/schema.js";
@@ -45,7 +46,9 @@ function statusPill(s: GameSummary): Html {
 
 function gameCard(s: GameSummary, join = false, userId?: number): Html {
   const map = s.map;
-  const players = s.players.map((p) => seatChip(p.seat, p.name)).join("");
+  // A computer opponent's chip says how well it plays.
+  const level = `<span class="seat-chip-level">${esc(BOT_LEVEL_NAME[s.game.botLevel])}</span>`;
+  const players = s.players.map((p) => seatChip(p.seat, p.name, p.isBot ? level : "")).join("");
   const open = join
     ? `<form method="post" action="/g/${esc(s.game.id)}/join"><button class="btn btn-primary btn-sm" type="submit">Join</button></form>`
     : `<a class="btn btn-sm${s.yourMove ? " btn-primary" : ""}" href="/g/${esc(s.game.id)}">${s.game.status === "over" ? "Review" : "Open"}</a>`;
@@ -99,13 +102,18 @@ ${notice ? `<p class="alert alert-ok" role="status">${esc(notice)}</p>` : ""}
           <label><input type="radio" name="opponents" value="bots" checked><span>${icons.cpu}Computer</span></label>
           <label><input type="radio" name="opponents" value="people"><span>${icons.users}Friends</span></label>
         </fieldset>
+        <label class="field" id="bot-level-field"><span>Computer opponents</span>
+          <select class="select" name="level" id="bot-level">
+            ${BOT_LEVELS.map((l) => `<option value="${l}"${l === "regular" ? " selected" : ""}>${BOT_LEVEL_NAME[l]}</option>`).join("")}
+          </select>
+        </label>
         <label class="field"><span>Players</span>
           <select class="select" name="seats" id="seats">
             ${Array.from({ length: (MAPS[0]?.seats ?? 2) - 1 }, (_, i) => `<option value="${i + 2}">${i + 2} players</option>`).join("")}
           </select>
         </label>
         <button class="btn btn-primary btn-lg" type="submit">${icons.plus}<span>Create game</span></button>
-        <p class="faint small">Computer opponents start straight away. With friends you get a link to share, and the game starts when every seat is filled.</p>
+        <p class="faint small">Computer opponents start straight away: Novice for learning, Veteran for a fight. With friends you get a link to share, and the game starts when every seat is filled.</p>
       </div>
     </form>
   </aside>
@@ -200,6 +208,8 @@ export function rulesPage(user: User | null): Html {
       <li><strong>Income sites</strong> pay +25 gold a round, on top of everyone's +${RULES.baseIncome}. Only <strong>engineers</strong> can capture them.</li>
       <li><strong>Fog of war:</strong> you only see what your units and the base tiles and posts you hold can see.</li>
     </ul>
+    <h2>Playing the computer</h2>
+    <p>Computer opponents come in three levels, picked when you start the game. A <strong>Novice</strong> wanders, buys whatever it fancies and often takes the first shot it sees. A <strong>Regular</strong> plays a sound, simple game. A <strong>Veteran</strong> picks its fights: it finishes off the wounded, keeps out of your sights, and buys to counter what it sees of your side. None of them cheats: each sees exactly what a player in its seat would, through the same fog.</p>
     <h2>Replays</h2>
     <p>A finished game can be watched again from the start with the fog lifted: <strong>Replay</strong> on its card in your games, or <strong>Watch the replay</strong> at the end of the game. It plays a step every two seconds, with the moves and shots animated; pause it, step back and forth, or speed it up.</p>
     <h2>Reading the board</h2>
