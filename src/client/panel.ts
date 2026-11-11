@@ -102,15 +102,17 @@ function shotSummary(p: ShotPreview): string {
  */
 function baseChip(s: ClientState, p: SeatPublic): string {
   const v = s.view!;
-  const home = baseTiles(s.map, v.seats.length).filter((t) => t.home === p.seat).length;
+  // Out of every base tile in play: holding them all is the win (the owner's
+  // call; out of its own base it read as "4/4" for everyone all game).
+  const all = baseTiles(s.map, v.seats.length).length;
   const warn = !p.eliminated && baseWarning(p.baseTiles);
   // Unit counts and gold are only there for your own side during play;
   // everyone's in a replay and once the game is over.
   const counts = p.units === null ? "" : `, ${p.units} unit${p.units === 1 ? "" : "s"}`;
   const purse = p.gold === null || p.seat === v.seat ? "" : `, ${p.gold} gold`;
-  const label = `${p.baseTiles} of ${home} base tiles${counts}${purse}`;
+  const label = `${p.baseTiles} of all ${all} base tiles${counts}${purse}`;
   const extra = `${p.units === null ? "" : ` · ${p.units}u`}${purse ? ` · ${p.gold}g` : ""}`;
-  return `<span class="base-chip${warn ? " low" : ""}" title="${label}" aria-label="${label}">Base ${p.baseTiles}/${home}${extra ? `<span class="faint">${extra}</span>` : ""}</span>`;
+  return `<span class="base-chip${warn ? " low" : ""}" title="${label}" aria-label="${label}">Base ${p.baseTiles}/${all}${extra ? `<span class="faint">${extra}</span>` : ""}</span>`;
 }
 
 export function renderPanel(s: ClientState): string {

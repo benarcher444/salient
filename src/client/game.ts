@@ -533,6 +533,7 @@ function dropRoute(unitId: number) {
  * there is no way there that avoids the enemies this player can see.
  */
 function setRoute(unit: Unit, to: Point, finalFacing?: Facing): boolean {
+  if (unit.fired) return false;
   const path = fullPathTo(s, unit, to);
   if (!path || !path.length) return false;
   const leg = firstLeg(s, unit, path);
@@ -607,6 +608,12 @@ function continueRoutes(v: PlayerView) {
   for (const r of v.myRoutes ?? []) {
     const u = unitById(s, r.unitId);
     if (!u || !isMine(s, u) || samePoint(u, r.to)) continue;
+    // It fired last round, so it can't move this one: the route ends, rather
+    // than sit there looking as if it will go (the owner's call).
+    if (u.fired) {
+      s.log.push({ round: v.round, html: `${unitLabel(s, u)}: route stopped, it fired last round (it can turn, not move).` });
+      continue;
+    }
     const way = wayOn(s, u, r.to);
     const blocker = way?.find((p) => v.units.some((o) => o.seat !== u.seat && samePoint(o, p)));
     if (!way || blocker) {
@@ -688,6 +695,12 @@ function planningTap(p: Point, u: Unit | undefined, input: Input, shift = false)
       dropRoute(selUnit.id);
       // It then turns to follow the pointer (a right click, or on a touch screen the next tap, sets it).
       if (input !== "key") startAim();
+      return;
+    }
+    // A unit that fired last round can only turn: no move or route to queue
+    // (the owner found a route that couldn't start misleading).
+    if (!path && selUnit.fired && !samePoint(p, selUnit)) {
+      toast("Fired last round: it can turn this round, but not move.");
       return;
     }
     // Further than it can go this round: a route over several rounds, if

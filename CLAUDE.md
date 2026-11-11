@@ -139,8 +139,10 @@ ordinary move, drops the route when the unit is there or the way is shut,
 and the player still locks in. Server-side so a reload or another device
 carries on the route; the browser plans the legs because it alone knows
 what the player can see. A route's leg is cut short rather than finish on a
-teammate's tile (`untangleLegs`); a unit that fired gets the route and a
-turn-only move. A move within reach, Clear order or Delete drops the route;
+teammate's tile (`untangleLegs`). A unit that fired last round can't be
+given a move or a route at all (a toast says why, and no route preview is
+drawn), and a route it had ends when it fires, with a log line: the owner
+found a route that couldn't start misleading. A move within reach, Clear order or Delete drops the route;
 the panel's Cancel route keeps this round's leg. The board draws the rest
 faint and dashed, with a numbered marker where each later round's leg ends
 (2 is next round) and a ring on the destination. Validation is lenient (your

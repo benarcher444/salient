@@ -559,9 +559,10 @@ export class Board {
         if (s.hover && reach.cost.has(s.hover.y * s.map.width + s.hover.x)) {
           const path = pathTo(s.map, reach, s.hover);
           if (path && path.length) this.route(u, path, this.pal.path, true);
-        } else if (s.hover && !(s.hover.x === u.x && s.hover.y === u.y)) {
+        } else if (s.hover && !u.fired && !(s.hover.x === u.x && s.hover.y === u.y)) {
           // Beyond this round's reach: the route it would take over several
-          // rounds, this round's leg as an ordinary preview.
+          // rounds, this round's leg as an ordinary preview. (Not for a unit
+          // that fired last round: it can't move at all this round.)
           const path = fullPathTo(s, u, s.hover);
           if (path && path.length) {
             const leg = firstLeg(s, u, path);
