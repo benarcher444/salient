@@ -358,7 +358,8 @@ rules. `simulate.ts --house=upkeep,heal` plays under them.
 **A unit standing on a site shows whose it is.** The unit covers the tile's
 own colours, so `drawSiteBadges` puts a badge on the tile's corner, over the
 unit: the owner's colour (dashed grey when neutral) with the site's sign
-(flag, diamond, house), and a base tile being taken shows one pip per round
+(flag, diamond, square; none for a side's own unit on its own home tile, the
+usual case), and a capture being made shows one pip per round
 held in the taker's colour. The tooltip says what happens next (`siteLine`
 in `game.ts`). The owner couldn't tell whether a square had been taken.
 

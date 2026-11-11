@@ -70,7 +70,9 @@ export function renderTopBar(s: ClientState) {
     gold.hidden = false;
     const left = canPlan(s) ? goldLeft(s) : v.gold;
     const income = incomePerRound(s);
-    const keep = RULES.upkeep ? upkeepFor(partialState(s), v.seat) : 0;
+    // Planned deployments land before the round ends, so they pay this round's upkeep too.
+    const planned = canPlan(s) ? s.draft.spawns.map((sp, i) => ({ id: -1 - i, seat: v.seat!, kind: sp.kind }) as Unit) : [];
+    const keep = RULES.upkeep ? upkeepFor({ units: [...partialState(s).units, ...planned] }, v.seat) : 0;
     const net = income - keep;
     const label = `${left} gold; ${net >= 0 ? "+" : "−"}${Math.abs(net)} at the end of every round (${RULES.baseIncome} base${income > RULES.baseIncome ? `, ${income - RULES.baseIncome} from supply depots` : ""}${RULES.upkeep ? `, less ${keep} upkeep` : ""})`;
     gold.title = label;

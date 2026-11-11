@@ -382,11 +382,12 @@ export class Board {
 
   /**
    * A unit covers the tile under it, and with it the site's colours: so on
-   * every occupied base tile, command post and income site a badge in the
-   * tile's corner, over the unit, says whose it is now (the owner's colour,
-   * a dashed grey ring when nobody's), with the site's own sign: a flag, a
-   * diamond, a house. A base tile being taken shows the capture's progress,
-   * one pip per round held, in the taker's colour.
+   * every occupied command post and supply depot, and every occupied base
+   * tile that isn't simply its own side's unit on its own tile, a badge in
+   * the tile's corner, over the unit, says whose it is now (the owner's
+   * colour, a dashed grey ring when nobody's), with the site's own sign: a
+   * flag, a diamond, a square. A capture under way shows its progress, one
+   * pip per round held, in the taker's colour.
    */
   private drawSiteBadges() {
     const v = this.s.view;
@@ -436,12 +437,9 @@ export class Board {
         g.closePath();
         g.fill();
       } else {
-        g.moveTo(cx - 0.08, cy - 0.01);
-        g.lineTo(cx, cy - 0.09);
-        g.lineTo(cx + 0.08, cy - 0.01);
-        g.closePath();
-        g.fill();
-        g.fillRect(cx - 0.06, cy - 0.01, 0.12, 0.09);
+        // A base tile: a small square, like the tiles themselves. (A house
+        // with a roof read as an arrow pointing up.)
+        g.fillRect(cx - 0.07, cy - 0.07, 0.14, 0.14);
       }
       g.restore();
     };
@@ -470,8 +468,14 @@ export class Board {
     });
     baseTiles(map, v.seats.length).forEach((t, i) => {
       if (!occupied(t)) return;
-      badge(t, v.baseOwners[i] ?? null, "base");
-      pips(t, v.baseCapture?.[i] ?? null);
+      const owner = v.baseOwners[i] ?? null;
+      const taking = v.baseCapture?.[i] ?? null;
+      // A side's own unit on its own home tile, still its own, is the usual
+      // case and says nothing: no badge (every unit deployed would carry one).
+      const unit = v.units.find((u) => u.x === t.x && u.y === t.y);
+      if (!taking && owner === t.home && unit?.seat === owner) return;
+      badge(t, owner, "base");
+      pips(t, taking);
     });
   }
 
