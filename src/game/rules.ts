@@ -382,9 +382,26 @@ export function upkeepFor(state: Pick<GameState, "units">, seat: Seat): number {
   return Math.max(0, Math.round(total - RULES.upkeepAllowance));
 }
 
-/** On or next to (diagonals too) a base tile its side holds: where it heals under the house rule. */
-export function nearOwnBase(map: MapDef, state: Pick<GameState, "baseOwners" | "seatCount">, u: Pick<Unit, "x" | "y" | "seat">): boolean {
-  return baseTiles(map, state.seatCount).some((t, i) => state.baseOwners[i] === u.seat && Math.max(Math.abs(t.x - u.x), Math.abs(t.y - u.y)) <= 1);
+/**
+ * On or next to (diagonals too) a base tile its side holds, or (rules
+ * revision 3) a command post it holds: where it heals under the house rule.
+ * The owner counts a held post as a captured base.
+ */
+export function nearOwnBase(
+  map: MapDef,
+  state: Pick<GameState, "baseOwners" | "postOwners" | "seatCount">,
+  u: Pick<Unit, "x" | "y" | "seat">,
+): boolean {
+  const near = (t: Point) => Math.max(Math.abs(t.x - u.x), Math.abs(t.y - u.y)) <= 1;
+  if (baseTiles(map, state.seatCount).some((t, i) => state.baseOwners[i] === u.seat && near(t))) return true;
+  return RULES.rulesRevision >= 3 && map.posts.some((p, i) => state.postOwners[i] === u.seat && near(p));
+}
+
+/** Is a healer of its own side next to it (not itself)? Its help works anywhere. */
+export function healerBeside(state: Pick<GameState, "units">, u: Pick<Unit, "id" | "x" | "y" | "seat">): boolean {
+  return state.units.some(
+    (m) => m.id !== u.id && m.seat === u.seat && hasTrait(m.kind, "medic") && Math.max(Math.abs(m.x - u.x), Math.abs(m.y - u.y)) <= RULES.medicRange,
+  );
 }
 
 /** Seats in the order they take attack turns this round. The lead rotates every round. */
@@ -642,10 +659,7 @@ function endRound(map: MapDef, state: GameState, events: GameEvent[]) {
   for (const u of state.units) {
     const max = UNITS[u.kind].hp;
     let heal = u.damaged || (RULES.healOnlyNearBase && !nearOwnBase(map, state, u)) ? 0 : RULES.healPerRound;
-    const medicNearby = state.units.some(
-      (m) => m !== u && m.seat === u.seat && hasTrait(m.kind, "medic") && Math.max(Math.abs(m.x - u.x), Math.abs(m.y - u.y)) <= RULES.medicRange,
-    );
-    if (medicNearby) heal += RULES.medicHeal;
+    if (healerBeside(state, u)) heal += RULES.medicHeal;
     u.hp = Math.min(max, u.hp + heal);
   }
 

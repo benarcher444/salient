@@ -3,7 +3,7 @@
   "role": "Unarmed. The only unit that can take supply depots, and quick to take posts and bases.",
   "cost": 80,
   "hp": 90,
-  "move": 3,
+  "move": 4,
   "sight": 7,
   "range": 0,
   "optimal": 0,

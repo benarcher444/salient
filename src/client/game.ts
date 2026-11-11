@@ -7,7 +7,7 @@ import { useTuning } from "../game/tuning.js";
 import { pathTo } from "../game/movement.js";
 import { UNITS, UNIT_KINDS, hasTrait } from "../game/units.js";
 import { RULES } from "../game/constants.js";
-import { nearOwnBase } from "../game/rules.js";
+import { healerBeside, nearOwnBase } from "../game/rules.js";
 import { baseTiles } from "../game/visibility.js";
 import type { Facing, GameEvent, Point, Unit, UnitKind } from "../game/types.js";
 import type { PlayerView } from "../game/view.js";
@@ -953,14 +953,27 @@ function siteLine(u: Unit): string {
   return "";
 }
 
+/**
+ * Under the heal-at-base house rule, what a wounded unit of yours will heal
+ * at the end of the round where it stands, and from what.
+ */
+function healingLine(u: Unit): string {
+  const st = partialState(s);
+  const atBase = nearOwnBase(s.map, st, u);
+  const healer = healerBeside(st, u);
+  const zone = RULES.rulesRevision >= 3 ? "your base tiles or a command post you hold" : "your base tiles";
+  if (atBase && healer) return `Heals here: +${RULES.healPerRound + RULES.medicHeal} a round (+${RULES.healPerRound} by ${zone} if not hit, +${RULES.medicHeal} from the healer next to it).`;
+  if (atBase) return `Heals here: +${RULES.healPerRound} a round if not hit.`;
+  if (healer) return `Heals +${RULES.medicHeal} a round from the healer next to it, even under fire. (+${RULES.healPerRound} more beside ${zone}.)`;
+  if (hasTrait(u.kind, "medic")) return `Not healing: a healer can't heal itself. Bring it beside ${zone}, or next to another healer.`;
+  return `Not healing: units heal only beside ${zone}, or next to a healer.`;
+}
+
 function showTooltip(tile: Point, sx: number, sy: number) {
   const u = unitAt(s, tile);
   if (u) {
     const site = siteLine(u);
-    const wounded = isMine(s, u) && u.hp < UNITS[u.kind].hp;
-    const healing = wounded && RULES.healOnlyNearBase && s.view
-      ? nearOwnBase(s.map, partialState(s), u) ? `<span>Heals here: +${RULES.healPerRound} a round if not hit.</span>` : `<span>Not healing: units heal only beside your base tiles (or next to a healer).</span>`
-      : "";
+    const healing = isMine(s, u) && u.hp < UNITS[u.kind].hp && RULES.healOnlyNearBase && s.view ? `<span>${healingLine(u)}</span>` : "";
     tooltip.innerHTML = `<strong>${unitLabel(s, u)}</strong><span>${u.hp} / ${UNITS[u.kind].hp} hp · facing ${facingName(u.facing)}</span>${site ? `<span>${site}</span>` : ""}${healing}`;
     tooltip.style.left = `${sx + 14}px`;
     tooltip.style.top = `${sy + 14}px`;

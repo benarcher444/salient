@@ -332,23 +332,33 @@ export class Board {
    * base in its home colour; a captured tile is washed in its captor's colour
    * with a flag in the corner, a neutral one is greyed out with a dashed edge.
    */
+  /** The tiles round a healing spot (heal-at-base house rule), washed faintly in its owner's colour. */
+  private healWash(t: Point, owner: number) {
+    const g = this.ctx;
+    g.fillStyle = alpha(colourHex(this.pal.seats[owner]!), 0.1);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const x = t.x + dx;
+      const y = t.y + dy;
+      if (x >= 0 && y >= 0 && x < this.s.map.width && y < this.s.map.height && !(dx === 0 && dy === 0)) g.fillRect(x, y, 1, 1);
+    }
+  }
+
   private drawBaseOwners() {
     const v = this.s.view;
     if (!v) return;
     const g = this.ctx;
+    // Heal at base (rules revision 3): the posts you hold heal round them too.
+    if (RULES.healOnlyNearBase && RULES.rulesRevision >= 3 && v.seat !== null) {
+      this.s.map.posts.forEach((p, i) => {
+        if (v.postOwners[i] === v.seat) this.healWash(p, v.seat!);
+      });
+    }
     baseTiles(this.s.map, v.seats.length).forEach((t, i) => {
       const owner = v.baseOwners[i] ?? null;
       // (A capture under way is drawn over the unit taking it: drawSiteBadges.)
       // Heal-at-base house rule: a faint wash on the tiles round your own
       // base tiles, where your units heal.
-      if (RULES.healOnlyNearBase && owner !== null && owner === v.seat) {
-        g.fillStyle = alpha(colourHex(this.pal.seats[owner]!), 0.1);
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-          const x = t.x + dx;
-          const y = t.y + dy;
-          if (x >= 0 && y >= 0 && x < this.s.map.width && y < this.s.map.height && !(dx === 0 && dy === 0)) g.fillRect(x, y, 1, 1);
-        }
-      }
+      if (RULES.healOnlyNearBase && owner !== null && owner === v.seat) this.healWash(t, owner);
       if (owner === t.home) return;
       g.save();
       if (owner === null) {

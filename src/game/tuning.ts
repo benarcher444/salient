@@ -279,8 +279,10 @@ export const TUNING_VERSION = 2;
  *      striking an unseen unit keeps the chance it was fired with.
  *   2: a command post takes as long to capture as a base tile (two rounds a
  *      step, an engineer's one), not one round a step.
+ *   3: under the heal-at-base house rule, a command post your side holds
+ *      heals the tiles round it too, like a base tile.
  */
-export const RULES_REVISION = 2;
+export const RULES_REVISION = 3;
 
 /** Validate tuning data (from the files, or a game's stored snapshot). Throws TuningError naming the file and field. */
 export function checkTuning(raw: { rules: unknown; units: Record<string, unknown> }): Tuning {

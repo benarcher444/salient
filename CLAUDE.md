@@ -351,8 +351,11 @@ each unit costs `upkeepPer100 × (cost/100)^upkeepExponent` a round (5,
 1.3: dearer units more than their share, the owner's call), less
 `upkeepAllowance` (20), out of income; gold never goes below 0 and there is
 no other penalty (the owner's call). Heal at base: ordinary healing only on
-or beside a base tile the side holds (`nearOwnBase`), a healer's anywhere;
-the board washes those tiles faintly. The battle title lists a game's house
+or beside a base tile the side holds (`nearOwnBase`), or (rules revision 3)
+a command post it holds, which the owner counts as a captured base; a
+healer's anywhere, never on itself (`healerBeside`). The board washes those
+tiles faintly, and a wounded unit's tooltip adds up what it will heal and
+why (`healingLine`). The battle title lists a game's house
 rules. `simulate.ts --house=upkeep,heal` plays under them.
 
 **A unit standing on a site shows whose it is.** The unit covers the tile's

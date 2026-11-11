@@ -886,7 +886,18 @@ section("Upkeep: captures, income, healing");
     check("but a healer's help still works anywhere", at(r, 3)!.hp === 50 + RULES.medicHeal, `${at(r, 3)!.hp}`);
     const lost = { ...st, baseOwners: st.baseOwners.map((o) => (o === 0 ? 1 : o)) };
     check("a base tile you've lost is no help", resolve(lost, [], []).state.units.find((u) => u.id === 1)!.hp === 50);
+    check("a healer doesn't heal itself", resolve(stateOn("upkeep", [unit(4, 0, "healer", 10, 6, { hp: 30 })]), [], []).state.units[0]!.hp === 30);
   });
+  // Rules revision 3: a command post you hold heals round it too.
+  board("healpost", (b) => b.pen().post(6, 6));
+  const nearPost = (t: Tuning) =>
+    withTuning(t, () => {
+      const st = stateOn("healpost", [unit(1, 0, "rifleman", 7, 7, { hp: 50 })]);
+      st.postOwners[0] = 0;
+      return resolve(st, [], []).state.units[0]!.hp;
+    });
+  check("heal at base: beside a command post you hold, a unit heals too", nearPost(house({ healOnlyNearBase: 1 })) === 50 + RULES.healPerRound);
+  check("but not in a game from before rules revision 3", nearPost(house({ healOnlyNearBase: 1, rulesRevision: 2 })) === 50);
 }
 {
   board("timeout");

@@ -114,7 +114,7 @@ ${notice ? `<p class="alert alert-ok" role="status">${esc(notice)}</p>` : ""}
         </label>
         <fieldset class="house-rules"><legend>House rules</legend>
           <label class="check"><input type="checkbox" name="upkeep" id="rule-upkeep"><span><strong>Upkeep.</strong> Units cost gold every round to keep, dearer ones more than their share.</span></label>
-          <label class="check"><input type="checkbox" name="baseHealing" id="rule-base-healing"><span><strong>Heal at base.</strong> Units heal only on or beside your base tiles; healers still heal anywhere.</span></label>
+          <label class="check"><input type="checkbox" name="baseHealing" id="rule-base-healing"><span><strong>Heal at base.</strong> Units heal only on or beside your base tiles and command posts; healers still heal anywhere.</span></label>
         </fieldset>
         <button class="btn btn-primary btn-lg" type="submit">${icons.plus}<span>Create game</span></button>
         <p class="faint small">Computer opponents start straight away: Novice for learning, Veteran for a fight. With friends you get a link to share, and the game starts when every seat is filled.</p>
@@ -217,7 +217,7 @@ export function rulesPage(user: User | null): Html {
     <p>Two optional rules can be switched on when a game is created, and are shown beside the map's name in the battle.</p>
     <ul>
       <li><strong>Upkeep.</strong> Every unit costs gold each round to keep: ${RULES.upkeepPer100} × (its price ÷ 100)<sup>${RULES.upkeepExponent}</sup>, so dear units cost more than their share (a rifleman ${Math.round(RULES.upkeepPer100)}, a ${Math.round(RULES.upkeepPer100 * Math.pow(1.8, RULES.upkeepExponent) * 10) / 10}-gold heavy much more). The first ${RULES.upkeepAllowance} gold of upkeep each round is free. It comes out of your income; your gold never goes below nothing.</li>
-      <li><strong>Heal at base.</strong> Units only heal (+${RULES.healPerRound} a round) on or beside a base tile your side holds. A healer's +${RULES.medicHeal} to the units next to it still works anywhere.</li>
+      <li><strong>Heal at base.</strong> Units only heal (+${RULES.healPerRound} a round) on or beside a base tile or command post your side holds. A healer's +${RULES.medicHeal} to the units next to it still works anywhere; a healer can't heal itself.</li>
     </ul>
     <h2>Playing the computer</h2>
     <p>Computer opponents come in three levels, picked when you start the game. A <strong>Novice</strong> wanders, buys whatever it fancies and often takes the first shot it sees. A <strong>Regular</strong> plays a sound, simple game. A <strong>Veteran</strong> picks its fights: it finishes off the wounded, keeps out of your sights, and buys to counter what it sees of your side. None of them cheats: each sees exactly what a player in its seat would, through the same fog.</p>
