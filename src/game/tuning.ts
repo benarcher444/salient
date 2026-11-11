@@ -74,6 +74,14 @@ export interface UnitStats {
 }
 
 export interface RulesTuning {
+  /**
+   * Which revision of the rules *code* the game was created under: not in
+   * rules.json, set from RULES_REVISION for new games, 0 for snapshots taken
+   * before it existed. A rules fix that would change how a stored log plays
+   * out checks it, so finished replays and games in progress keep playing
+   * exactly as they did.
+   */
+  rulesRevision: number;
   startGold: number;
   baseIncome: number;
   healPerRound: number;
@@ -233,10 +241,11 @@ function checkRules(raw: unknown): RulesTuning {
   if (!isObject(raw.traits)) throw new TuningError(`${file}: "traits" must be an object of trait numbers.`);
   checkNumbers(file, raw.traits, TRAIT_NUMBERS, "traits.");
   if ((raw.minHitChance as number) > (raw.maxHitChance as number)) throw new TuningError(`${file}: "minHitChance" can't be more than "maxHitChance".`);
-  const known = new Set(["flank", "traits", ...RULE_NUMBERS.map(([n]) => n)]);
+  const known = new Set(["flank", "traits", "rulesRevision", ...RULE_NUMBERS.map(([n]) => n)]);
   const extra = Object.keys(raw).find((k) => !known.has(k));
   if (extra) throw new TuningError(`${file}: unknown field "${extra}" (a typo?).`);
-  return structuredClone(raw) as unknown as RulesTuning;
+  const rulesRevision = typeof raw.rulesRevision === "number" && Number.isInteger(raw.rulesRevision) ? raw.rulesRevision : 0;
+  return { ...(structuredClone(raw) as unknown as RulesTuning), rulesRevision };
 }
 
 /**
@@ -245,6 +254,15 @@ function checkRules(raw: unknown): RulesTuning {
  * degrees rather than eighths; snapshots without a version are older.
  */
 export const TUNING_VERSION = 2;
+
+/**
+ * The rules code's revision, stamped on new games' snapshots (see
+ * RulesTuning.rulesRevision). Raise it when a rules fix would replay a stored
+ * log differently, and gate the fix on `RULES.rulesRevision >= n`.
+ *   1: a wall meeting a window at a corner blocks a line through it; a shot
+ *      striking an unseen unit keeps the chance it was fired with.
+ */
+export const RULES_REVISION = 1;
 
 /** Validate tuning data (from the files, or a game's stored snapshot). Throws TuningError naming the file and field. */
 export function checkTuning(raw: { rules: unknown; units: Record<string, unknown> }): Tuning {
@@ -258,7 +276,7 @@ export function checkTuning(raw: { rules: unknown; units: Record<string, unknown
 
 /** The tuning in the files right now. New games are created under it. */
 export const FILE_TUNING: Tuning = checkTuning({
-  rules: rulesFile,
+  rules: { ...rulesFile, rulesRevision: RULES_REVISION },
   units: { rifleman, engineer, scout, shotgun, riot, sniper, commando, heavy, healer, officer },
 });
 
@@ -281,7 +299,10 @@ function fillIn(raw: { rules: unknown; units: Record<string, unknown> }): { rule
   for (const kind of UNIT_KINDS) {
     units[kind] = kind in raw.units ? merge(FILE_TUNING.units[kind] as unknown as Record<string, unknown>, raw.units[kind]) : FILE_TUNING.units[kind];
   }
-  return { rules: merge(FILE_TUNING.rules as unknown as Record<string, unknown>, raw.rules), units };
+  const rules = merge(FILE_TUNING.rules as unknown as Record<string, unknown>, raw.rules);
+  // Not a number to fill from the files: a snapshot without it predates it.
+  rules.rulesRevision = isObject(raw.rules) && typeof raw.rules.rulesRevision === "number" ? raw.rules.rulesRevision : 0;
+  return { rules, units };
 }
 
 /**
@@ -308,6 +329,7 @@ export function upgradeSnapshot(raw: { version?: number; rules: unknown; units: 
   const oldRules = isObject(raw.rules) ? raw.rules : {};
   const rules: RulesTuning = {
     ...pick(FILE_TUNING.rules, oldRules),
+    rulesRevision: 0,
     flank: pick(FILE_TUNING.rules.flank, oldRules.flank),
     traits: pick(FILE_TUNING.rules.traits, oldRules.traits),
   };

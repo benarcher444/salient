@@ -22,7 +22,7 @@
     "rear": 1.5
   },
   "traits": {
-    "shieldFrontHit": 0.1,
+    "shieldFrontHit": 0.35,
     "backstabMultiplier": 2.5,
     "backstabFatalRange": 1,
     "stealthRange": 3,

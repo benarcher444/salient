@@ -1,8 +1,8 @@
 {
   "name": "Riot",
-  "role": "Unarmed shield bearer. Almost impossible to hit from the front.",
+  "role": "Unarmed shield bearer. Hard to hit from the front.",
   "cost": 110,
-  "hp": 130,
+  "hp": 110,
   "move": 4,
   "sight": 7,
   "range": 0,

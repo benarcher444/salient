@@ -92,7 +92,7 @@ any class any of the existing ones.
 | `obstructionFactor` | Multiplied once for each thing partly in the way (up to three). |
 | `longRangeAccuracy` | Accuracy at a unit's maximum `range`, as a share of its accuracy at `optimal` (0.65 = 35% less). It falls steadily between the two. |
 | `flank.front`, `flank.side`, `flank.rear` | Damage multiplier by which side of the target the shot hits. |
-| `traits.shieldFrontHit` | Shield units are hit from the front this share as often (0.1 = a tenth). |
+| `traits.shieldFrontHit` | Shield units are hit from the front this share as often (0.35 = about a third). |
 | `traits.backstabMultiplier` | A backstab unit's damage into a back is its `damage` × this (instead of `flank.rear`). |
 | `traits.backstabFatalRange` | From this close behind (in tiles, diagonals counting as one), a backstab hit kills outright. |
 | `traits.stealthRange` | Stealth units are only seen by enemies within this many tiles (with a clear line). |

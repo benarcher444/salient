@@ -3,7 +3,7 @@
 // browser. Behaviour that looks odd but is deliberate is pinned here too, so a
 // later change cannot quietly "fix" it.
 //   npx tsx scripts/test-rules.ts
-import { stepOpen } from "../src/game/grid.js";
+import { facingToward, stepOpen } from "../src/game/grid.js";
 import { traceLine } from "../src/game/los.js";
 import { MAPS, MapBuilder, getMap, registerMap, symmetryTransforms } from "../src/game/maps.js";
 import { checkMap } from "../src/game/mapcheck.js";
@@ -175,6 +175,26 @@ section("Line of sight");
   });
   check("an L of walls (a room corner) blocks a diagonal through it", !traceLine(m, { x: 2, y: 2 }, { x: 4, y: 4 }).clear);
   check("... from the other diagonal direction too", !traceLine(m, { x: 4, y: 4 }, { x: 2, y: 2 }).clear);
+}
+{
+  // Game 3xaupj: a rifleman inside a house shot out through the corner where
+  // its north wall met its west window.
+  const m = board("los-wall-window", (b) => {
+    b.pen().edge(3, 3, "n", "wall");
+    b.pen().edge(3, 3, "w", "window");
+  });
+  check("a wall meeting a window at a corner blocks a diagonal through it", !traceLine(m, { x: 4, y: 4 }, { x: 2, y: 2 }).clear);
+  const w = board("los-window-window", (b) => {
+    b.pen().edge(3, 3, "n", "window");
+    b.pen().edge(3, 3, "w", "window");
+  });
+  const line = traceLine(w, { x: 4, y: 4 }, { x: 2, y: 2 });
+  check("two windows meeting at a corner are a window", line.clear && line.obstacles.some((o) => o.kind === "window"));
+  // A game created before the fix replays as it was played.
+  const { rulesRevision: _, ...oldRules } = FILE_TUNING.rules;
+  const old = upgradeSnapshot({ version: 2, rules: oldRules, units: FILE_TUNING.units as unknown as Record<string, unknown> });
+  check("a snapshot from before rules revision 1 reads as revision 0", old.rules.rulesRevision === 0 && FILE_TUNING.rules.rulesRevision >= 1);
+  check("and under it the wall-and-window corner still lets the line through", withTuning(old, () => traceLine(m, { x: 4, y: 4 }, { x: 2, y: 2 }).clear));
 }
 {
   const m = board("los-straight", (b) => {
@@ -436,6 +456,25 @@ section("Units on the line of fire");
   const shot = r.events.find((e) => e.type === "shot");
   check("but the shot strikes the unseen enemy in the way", shot?.type === "shot" && shot.targetId === 3 && shot.intendedId === 2 && shot.hit, JSON.stringify(shot));
   check("which takes the damage, not the target", at(r.state, 3)!.hp < UNITS.commando.hp && at(r.state, 2)!.hp === UNITS.rifleman.hp);
+}
+{
+  // Game 3xaupj: the line to the target clips a tile the shooter has no line
+  // of its own to (the rock is in the way), so whoever stands there is unseen
+  // and its own shot preview is impossible. The shot used to roll 0% and miss,
+  // round after round; now it keeps the chance it was fired with.
+  const m = board("shoot-unseen-clipped", (b) => b.pen().tile(2, 6, "rock"), 14, 12);
+  const shooter = unit(1, 0, "rifleman", 1, 9);
+  shooter.facing = facingToward(shooter, { x: 4, y: 4 });
+  const target = unit(2, 1, "rifleman", 4, 4);
+  const lurker = unit(3, 1, "rifleman", 3, 5);
+  const st = stateOn("shoot-unseen-clipped", [shooter, target, lurker]);
+  st.phase = "attack";
+  st.attackTurn = 0;
+  check("the lurker is on the line but can't be seen", traceLine(m, shooter, target).tiles.some((p) => p.x === 3 && p.y === 5) && !traceLine(m, shooter, lurker).clear);
+  const offered = previewShot(m, shooter, target, [shooter, target]);
+  const r = applyAction(st, { type: "attack", seat: 0, unitId: 1, targetId: 2 }, roll(0));
+  const shot = r.events.find((e) => e.type === "shot");
+  check("a shot clipping an unseen unit's tile strikes it at the chance it was fired with", shot?.type === "shot" && shot.targetId === 3 && shot.chance === offered.chance && shot.hit, JSON.stringify(shot));
 }
 
 section("Simultaneous movement");
@@ -927,8 +966,11 @@ section("Fog of war");
   check("one 2 tiles away is", ids.includes(4));
   check("own units always are", ids.includes(1));
   check("enemy gold is not in the view", v.gold === RULES.startGold && !("orders" in v));
+  check("another side's unit count and gold are not in the view", v.seats[1]!.units === null && v.seats[1]!.gold === null);
+  check("your own are", v.seats[0]!.units === 1 && v.seats[0]!.gold === RULES.startGold);
   const over = viewFor({ ...s, phase: "over" }, 0);
   check("when the game is over the fog lifts", over.units.length === 4);
+  check("and everyone's counts and gold show, as in a replay", over.seats[1]!.units === 3 && viewFor(s, null).seats[1]!.gold === RULES.startGold);
 }
 
 {

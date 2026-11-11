@@ -96,8 +96,13 @@ function baseChip(s: ClientState, p: SeatPublic): string {
   const v = s.view!;
   const home = baseTiles(s.map, v.seats.length).filter((t) => t.home === p.seat).length;
   const warn = !p.eliminated && baseWarning(p.baseTiles);
-  const label = `${p.baseTiles} of ${home} base tiles, ${p.units} unit${p.units === 1 ? "" : "s"}`;
-  return `<span class="base-chip${warn ? " low" : ""}" title="${label}" aria-label="${label}">Base ${p.baseTiles}/${home}<span class="faint"> · ${p.units}u</span></span>`;
+  // Unit counts and gold are only there for your own side during play;
+  // everyone's in a replay and once the game is over.
+  const counts = p.units === null ? "" : `, ${p.units} unit${p.units === 1 ? "" : "s"}`;
+  const purse = p.gold === null || p.seat === v.seat ? "" : `, ${p.gold} gold`;
+  const label = `${p.baseTiles} of ${home} base tiles${counts}${purse}`;
+  const extra = `${p.units === null ? "" : ` · ${p.units}u`}${purse ? ` · ${p.gold}g` : ""}`;
+  return `<span class="base-chip${warn ? " low" : ""}" title="${label}" aria-label="${label}">Base ${p.baseTiles}/${home}${extra ? `<span class="faint">${extra}</span>` : ""}</span>`;
 }
 
 export function renderPanel(s: ClientState): string {

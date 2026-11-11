@@ -10,8 +10,13 @@ export interface SeatPublic {
   seat: Seat;
   /** Base tiles this seat owns, of any base. */
   baseTiles: number;
-  /** Units it has on the field (a count only, never where). */
-  units: number;
+  /**
+   * Units it has on the field (a count only, never where), and its gold: the
+   * viewer's own, or everyone's once the game is over or in a replay. Null
+   * for another seat during play: a count would give away what the fog hides.
+   */
+  units: number | null;
+  gold: number | null;
   eliminated: boolean;
   /** Planning phase: has this seat locked in its orders? */
   ready: boolean;
@@ -64,7 +69,8 @@ export function viewFor(state: GameState, seat: Seat | null): PlayerView {
     seats: state.seats.map((s) => ({
       seat: s.seat,
       baseTiles: baseTilesOwned(state, s.seat),
-      units: state.units.filter((u) => u.seat === s.seat).length,
+      units: seat === null || over || s.seat === seat ? state.units.filter((u) => u.seat === s.seat).length : null,
+      gold: seat === null || over || s.seat === seat ? s.gold : null,
       eliminated: s.eliminated,
       ready: state.phase === "planning" && state.orders[s.seat] !== null,
     })),

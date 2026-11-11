@@ -1,4 +1,5 @@
 // Line of sight between tile centres, and what the line passes through.
+import { RULES } from "./tuning.js";
 import { TERRAIN, hEdge, inBounds, terrainAt, vEdge } from "./grid.js";
 import type { EdgeKind, MapDef, Point } from "./types.js";
 
@@ -97,7 +98,11 @@ function noteEdge(edge: EdgeKind | null, beyond: Point, obstacles: Obstacle[]): 
  * is, when (one of the two half-edges bounding the start quadrant's far side)
  * AND (one bounding the end quadrant's far side) are walls. A single wall
  * ending at the corner only grazes the line, and does not stop it; an L of two
- * walls (a room corner) or a straight wall does.
+ * walls (a room corner) or a straight wall does. Where a wall and a window
+ * meet at the corner and the line would cross between them (the corner of a
+ * house whose window runs up to it), the wall wins: a shot from inside can't
+ * slip out through the corner post. Two windows there are a window. (Rules
+ * revision 1: older games let the window win.)
  *
  * Two sight-blocking tiles touching diagonally across the line (two boulders)
  * also stop it.
@@ -129,7 +134,7 @@ function cornerBlocks(map: MapDef, x: number, y: number, sx: number, sy: number)
 
   const solidA = (k: EdgeKind) => sideA(k) || sideA("wall");
   const solidB = (k: EdgeKind) => sideB(k) || sideB("wall");
-  if (solidA("window") && solidB("window")) return "window";
+  if (solidA("window") && solidB("window")) return RULES.rulesRevision >= 1 && (sideA("wall") || sideB("wall")) ? "blocked" : "window";
   return "clear";
 }
 

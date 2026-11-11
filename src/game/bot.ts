@@ -30,6 +30,9 @@ export type BotAction =
   | { type: "attack"; unitId: number; targetId: number }
   | { type: "endAttacks" };
 
+/** Below this hit chance a bot holds fire (see chooseShot). */
+const MIN_SHOT_CHANCE = 0.2;
+
 /** Shopping weights once the essentials are covered. Riflemen are the backbone. */
 const MIX: [UnitKind, number][] = [
   ["rifleman", 5],
@@ -217,7 +220,10 @@ function planSpawns(view: PlayerView, map: MapDef, mine: Unit[], claimed: Set<st
   const seat = view.seat!;
   let gold = view.gold;
   const spawns: SpawnOrder[] = [];
-  const taken = (p: Point) => claimed.has(`${p.x},${p.y}`) || mine.some((u) => u.x === p.x && u.y === p.y);
+  // Any unit it can see standing there, enemies too: a deployment onto an
+  // enemy's tile fails (game 3xaupj: bots with no units left kept buying onto
+  // the tiles the enemy stood on, and never got a unit out).
+  const taken = (p: Point) => claimed.has(`${p.x},${p.y}`) || view.units.some((u) => u.x === p.x && u.y === p.y);
   const centre = { x: Math.floor(map.width / 2), y: Math.floor(map.height / 2) };
   // Deploy as far forward as possible: tiles nearest the middle first.
   // With enemies near, deploy closest to them instead: that is where help is needed.
@@ -277,6 +283,10 @@ export function chooseShot(view: PlayerView): BotAction {
       const p = previewShot(map, shooter, target, view.units);
       const kills = p.damage >= target.hp;
       const raiding = ownBase.some((b) => b.x === target.x && b.y === target.y);
+      // Firing pins the shooter down next round, so a long shot isn't free:
+      // skip the ones that will almost never land (a riot's shield, from the
+      // front), unless the shell bursts anyway or the target is taking our base.
+      if (p.chance < MIN_SHOT_CHANCE && p.splash === 0 && !raiding) continue;
       let score = p.chance * p.damage * (kills ? 2 : 1) * (raiding ? 3 : 1);
       if (p.splash > 0) {
         for (const t of blastTiles(map, target)) {

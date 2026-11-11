@@ -15,6 +15,7 @@ import { authRoutes } from "./routes/auth.js";
 import { gameRoutes } from "./routes/games.js";
 import { guestGuard } from "./guest.js";
 import { inviteRoutes } from "./routes/invites.js";
+import { adminRoutes } from "./routes/admin.js";
 import { mapRoutes } from "./routes/maps.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { layout } from "./views/layout.js";
@@ -57,6 +58,7 @@ await app.register(fastifyStatic, {
 authRoutes(app);
 gameRoutes(app);
 inviteRoutes(app);
+adminRoutes(app);
 mapRoutes(app);
 settingsRoutes(app);
 

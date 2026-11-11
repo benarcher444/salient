@@ -3,7 +3,7 @@
 // way the state changes, and it is deterministic given the roll function, so
 // a game is fully described by its seed and its list of actions.
 import { RULES } from "./constants.js";
-import { blastTiles, previewShot, rollShot } from "./combat.js";
+import { blastTiles, commanded, damageFor, flankOf, previewShot, rollShot } from "./combat.js";
 import { facingToward, samePoint } from "./grid.js";
 import { getMap } from "./maps.js";
 import { validatePath } from "./movement.js";
@@ -438,7 +438,26 @@ function attack(
     .map((p) => state.units.find((u) => u.x === p.x && u.y === p.y && u.seat !== seat && !known.includes(u)))
     .find((u): u is Unit => !!u);
   const target = hidden ?? aimedAt;
-  const preview = previewShot(map, shooter, target, known);
+  // The shot is rolled against what it strikes. A hidden unit is often
+  // hidden because the shooter has no line to its own tile (the line to the
+  // aimed-at unit only clips it), so its own preview can come out
+  // impossible; then the shot keeps the chance it was fired with, and the
+  // damage is worked out for the unit it struck. (Without this every such
+  // shot rolled 0% and missed, and a side could fire into it all game.
+  // Rules revision 1: older games keep rolling 0%, as they were played.)
+  let preview = previewShot(map, shooter, target, known);
+  if (hidden && !preview.possible && RULES.rulesRevision >= 1) {
+    const aimed = previewShot(map, shooter, aimedAt, known);
+    const flank = flankOf(shooter, hidden);
+    const shield = flank === "front" && hasTrait(hidden.kind, "shield") ? RULES.traits.shieldFrontHit : 1;
+    preview = {
+      ...aimed,
+      flank,
+      fatal: false,
+      chance: Math.max(RULES.minHitChance / 100, Math.round(aimed.chance * shield * 100) / 100),
+      damage: damageFor(shooter, hidden, flank, commanded(shooter, known)),
+    };
+  }
   const result = rollShot(preview, roll(), roll());
   const fired = state.burst?.unitId === shooter.id ? state.burst.fired + 1 : 1;
   const hurt = (u: Unit, damage: number) => {

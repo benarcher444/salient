@@ -52,6 +52,8 @@ None of its code did.
 | `npm run set-password -- <email> <pw>` | Replace a password (they cannot be recovered) |
 | `npm run unlock -- <email>` | Unlock an account after five wrong passwords |
 | `npm run delete-games -- --in-play` | Delete every unfinished game (or `-- <id>...`; `--dry-run` lists). Restart the server after |
+| `npm run fetch-game -- [latest\|<id>]` | Download a live game for review into `data/reviews/` (no argument lists recent games). Needs `ADMIN_TOKEN` in `.env` |
+| `npm run analyse-game -- <id> [--step=N]` | Replay a downloaded game: buys, matchups, hit rates, deaths, gold by round; `--step` details one replay step |
 | `npm run backup` | Consistent database copy into `data/backups/` |
 | `npm run db:generate` | Generate a migration after editing `src/db/schema.ts` |
 
@@ -131,7 +133,11 @@ unseen unit. (The first version used every unit on the server; the
 simulator caught bots losing their whole attack phase to such refusals.)
 An unseen enemy on the line is not ignored, though: it takes the shot
 (`attack` rolls against the nearest one, and the event carries
-`intendedId`), so hiding a unit never lets shots pass through it. The rule looks only at the current
+`intendedId`), so hiding a unit never lets shots pass through it. Such a unit
+is often unseen because the shooter has no line to its own tile (the shot
+only clips it), so its own preview is impossible: the shot then keeps the
+chance it was fired at (rules revision 1; before it, every one rolled 0%, and
+in 3xaupj a side fired into one hidden engineer for four rounds). The rule looks only at the current
 tick, so the result never depends on unit order. Attack turns go round the
 table one unit at a time; the first shooter rotates each round; a seat with
 nothing in reach is skipped automatically. A unit with more than one shot
@@ -157,7 +163,9 @@ to tile centre, and those very often pass exactly through a tile corner. The
 grid walk in `los.ts` compares crossings by cross-multiplied integers, so
 corners are decided exactly, never by rounding. At a corner, a single wall
 ending there only grazes the line; an L of walls (a room corner) or a straight
-wall blocks it. Pinned in `scripts/test-rules.ts`.
+wall blocks it, and so does a wall meeting a window there (rules revision 1:
+in game 3xaupj a rifleman shot out through a house's corner post, where its
+wall met its window). Pinned in `scripts/test-rules.ts`.
 
 **Every game carries its own copy of its map.** `games.map_data` holds the
 map as it was when the game was created; `mapFor()` registers it with the
@@ -192,7 +200,10 @@ human in that seat gets, so it cannot cheat. It lives in `src/game` so the
 simulator can run it without a server. On the server, `driveBots()` runs after
 every action, waits a moment (600 ms planning, 1.3 s attacks, so shots don't
 overlap the last animation) and decides when the timer fires, from the state
-at that time. A refused bot action falls back to the always-legal one (empty
+at that time. A bot holds fire under a 20% chance (`MIN_SHOT_CHANCE`: firing
+pins the shooter next round, and bots spent ~90 shots on riots' shields in
+3xaupj) unless the shell bursts anyway or the target stands on its base, and
+never deploys onto a tile it can see an enemy on. A refused bot action falls back to the always-legal one (empty
 orders, end attacks) so humans are never left waiting. `resumeBots()` at
 startup picks up games left waiting on a bot.
 
@@ -322,9 +333,10 @@ Use `scripts/simulate.ts` to see what a change does.
 **Ten classes, as the owner specified them (tuning version 2).** Rifleman
 (basic); engineer (unarmed, the only one that takes income sites); scout
 (fast, far-sighted, weak); shotgun (wide arc, very accurate, damage falling
-fast with distance: `spread`, plus `closeQuarters`); riot (unarmed, almost
-never hit from the front: the shield cuts *hit chance*, and `minHitChance`
-keeps it possible); sniper (`steady`: half accuracy after moving; `scoped`:
+fast with distance: `spread`, plus `closeQuarters`); riot (unarmed, hard to
+hit from the front: the shield cuts *hit chance* to 35%, `shieldFrontHit`;
+it was 10% with 130 health, and in 3xaupj riots drew 126 shots, 90 of them at
+5–10%, and corked every corridor, so the owner had it cut); sniper (`steady`: half accuracy after moving; `scoped`:
 worse the closer the target, and a long narrow strip of extra sight);
 commando (stealth, backstab, two shots, and a backstab from the next tile
 kills outright); heavy (`explosive`: a shell bursts on the target's tile hit
@@ -334,6 +346,31 @@ whose neighbours within 2 shoot better; `previewShot` needs the units list to
 see it, so every caller passes the units it knows). Hits vary ±10%
 (`damageVariance`, a second roll) and the panel and reticles show the hit
 chance and the damage range before firing.
+
+**Rules fixes that would replay a log differently are gated on a revision.**
+`RULES_REVISION` (`tuning.ts`) is stamped into every new game's snapshot as
+`rules.rulesRevision` (not in `rules.json`: it describes the code, not a
+number to tinker with); a snapshot without it is revision 0 (`fillIn` and
+`upgradeSnapshot` see to that, never filling it from the files). A fix checks
+`RULES.rulesRevision >= n`, so finished replays and games in progress play out
+exactly as they were played, and only new games get it. Changing the rules
+code ungated would cut a stored game's log off at the first action the new
+code refuses: a game in progress would lose its later moves.
+
+**Unit counts and gold are private during play.** The scoreboard showed every
+side's unit count, which gave away what the fog hides; `SeatPublic.units` and
+`.gold` are null for other seats until the game is over. A replay
+(`viewFor(state, null)`) shows everyone's, units and gold.
+
+**The owner reviews games from a development machine, not the server.**
+`GET /admin/games` and `/admin/games/:id` (`src/routes/admin.ts`) answer only
+to `Authorization: Bearer <ADMIN_TOKEN>` (at least 32 characters; unset or
+wrong, they are 404s, as if absent). The token is in the server's `.env` and
+the local one; `npm run fetch-game` uses it, and `npm run analyse-game`
+replays the download under today's code with the game's own snapshot. Read
+only, and the full log even of a game in progress: it is for the owner, and
+the token must never go in a URL. Built because pulling a game through the
+browser (the replay route needs a session) meant downloading a file by hand.
 
 **Games from before version 2 are upgraded, not refused.** Their snapshot has
 no `version`: `upgradeSnapshot` keeps their numbers where the field still
@@ -431,6 +468,9 @@ the server after `seed`/`unseed`, or it serves games that no longer exist.
   `applyAt` built from the primitives so symmetry and undo come for free.
 - **A rule change:** `src/game/rules.ts` or `combat.ts`, a test in
   `scripts/test-rules.ts`, then `npx tsx scripts/simulate.ts` to see it play.
+  If it would change how a stored log plays out, raise `RULES_REVISION` and
+  gate it (see the decision above), and check an old game still replays to
+  its end: `npm run analyse-game -- <id>`.
   Stored games replay their logs under the new rules *code* (their numbers
   are snapshotted, their code is not); a replay that hits an action the new
   code refuses stops there with a warning rather than crash the game.

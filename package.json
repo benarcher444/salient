@@ -17,6 +17,8 @@
     "unseed": "tsx scripts/unseed.ts",
     "set-password": "tsx scripts/set-password.ts",
     "unlock": "tsx scripts/unlock.ts",
+    "fetch-game": "tsx scripts/fetch-game.ts",
+    "analyse-game": "tsx scripts/analyse-game.ts",
     "delete-games": "tsx scripts/delete-games.ts",
     "backup": "tsx scripts/backup-db.ts",
     "db:generate": "drizzle-kit generate",

@@ -107,6 +107,13 @@ function upgradeAction(action: Action): Action {
 export function replayLog(id: string): ReplayLog | null {
   const live = loadGame(id);
   if (!live?.state || live.state.phase !== "over") return null;
+  return fullLog(id);
+}
+
+/** A started game's whole log, finished or not: the owner's review (routes/admin.ts) only. */
+export function fullLog(id: string): ReplayLog | null {
+  const live = loadGame(id);
+  if (!live?.state) return null;
   const legacy = isLegacy(live.game);
   const rows = db.select().from(gameActions).where(eq(gameActions.gameId, id)).orderBy(asc(gameActions.seq)).all();
   return {
