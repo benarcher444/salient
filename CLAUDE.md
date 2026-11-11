@@ -333,6 +333,13 @@ glide. Replays don't do it. A unit killed flashes, spins and shrinks as it
 falls (`DEATH_MS`), a "Down" label shows under it, and a scorch mark with a
 cross in its side's colour stays on the tile for `REMAINS_MS`.
 
+**A unit standing on a site shows whose it is.** The unit covers the tile's
+own colours, so `drawSiteBadges` puts a badge on the tile's corner, over the
+unit: the owner's colour (dashed grey when neutral) with the site's sign
+(flag, diamond, house), and a base tile being taken shows one pip per round
+held in the taker's colour. The tooltip says what happens next (`siteLine`
+in `game.ts`). The owner couldn't tell whether a square had been taken.
+
 **The whole battle can be played from the keyboard.** A cursor square is
 always on the board (`s.hover`; the mouse moves it too and leaving the board
 no longer clears it) and every key acts on it or on the selection, through

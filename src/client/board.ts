@@ -293,6 +293,7 @@ export class Board {
     this.drawCursorArc(now);
     this.drawRemains(now);
     this.drawUnits(now);
+    this.drawSiteBadges();
     this.drawEffects(now);
     this.drawHover(now);
 
@@ -337,18 +338,7 @@ export class Board {
     const g = this.ctx;
     baseTiles(this.s.map, v.seats.length).forEach((t, i) => {
       const owner = v.baseOwners[i] ?? null;
-      // A capture under way: a bar along the top of the tile in the
-      // capturer's colour, one segment per round of the step held so far.
-      const taking = v.baseCapture?.[i];
-      if (taking) {
-        const need = RULES.baseCaptureRounds;
-        const c = this.pal.seats[taking.seat]!;
-        const w = 0.8 / need;
-        for (let k = 0; k < need; k++) {
-          g.fillStyle = k < taking.rounds ? c : alpha(colourHex(this.pal.ink), 0.35);
-          g.fillRect(t.x + 0.1 + k * w + 0.02, t.y + 0.03, w - 0.04, 0.09);
-        }
-      }
+      // (A capture under way is drawn over the unit taking it: drawSiteBadges.)
       if (owner === t.home) return;
       g.save();
       if (owner === null) {
@@ -377,6 +367,96 @@ export class Board {
         g.fill();
       }
       g.restore();
+    });
+  }
+
+  /**
+   * A unit covers the tile under it, and with it the site's colours: so on
+   * every occupied base tile, command post and income site a badge in the
+   * tile's corner, over the unit, says whose it is now (the owner's colour,
+   * a dashed grey ring when nobody's), with the site's own sign: a flag, a
+   * diamond, a house. A base tile being taken shows the capture's progress,
+   * one pip per round held, in the taker's colour.
+   */
+  private drawSiteBadges() {
+    const v = this.s.view;
+    if (!v) return;
+    const g = this.ctx;
+    const map = this.s.map;
+    const occupied = (p: Point) => v.units.some((u) => u.x === p.x && u.y === p.y);
+    const badge = (p: Point, owner: number | null, sign: "post" | "income" | "base") => {
+      const cx = p.x + 0.84;
+      const cy = p.y + 0.16;
+      const r = 0.23;
+      // The sign is drawn for a badge of radius 0.17, scaled up.
+      g.save();
+      g.translate(cx, cy);
+      g.scale(r / 0.17, r / 0.17);
+      g.translate(-cx, -cy);
+      const colour = owner === null ? colourHex(this.pal.paper) : colourHex(this.pal.seats[owner]!);
+      g.fillStyle = colour;
+      g.strokeStyle = owner === null ? alpha(colourHex(this.pal.ink), 0.8) : "#ffffff";
+      g.lineWidth = 0.035;
+      g.setLineDash(owner === null ? [0.06, 0.05] : []);
+      g.beginPath();
+      g.arc(cx, cy, 0.17, 0, Math.PI * 2);
+      g.fill();
+      g.stroke();
+      g.setLineDash([]);
+      const ink = owner === null ? colourHex(this.pal.ink) : "#ffffff";
+      g.fillStyle = ink;
+      g.strokeStyle = ink;
+      g.lineWidth = 0.025;
+      g.beginPath();
+      if (sign === "post") {
+        g.moveTo(cx - 0.05, cy + 0.09);
+        g.lineTo(cx - 0.05, cy - 0.09);
+        g.stroke();
+        g.beginPath();
+        g.moveTo(cx - 0.05, cy - 0.09);
+        g.lineTo(cx + 0.08, cy - 0.05);
+        g.lineTo(cx - 0.05, cy - 0.01);
+        g.closePath();
+        g.fill();
+      } else if (sign === "income") {
+        g.moveTo(cx, cy - 0.09);
+        g.lineTo(cx + 0.08, cy);
+        g.lineTo(cx, cy + 0.09);
+        g.lineTo(cx - 0.08, cy);
+        g.closePath();
+        g.fill();
+      } else {
+        g.moveTo(cx - 0.08, cy - 0.01);
+        g.lineTo(cx, cy - 0.09);
+        g.lineTo(cx + 0.08, cy - 0.01);
+        g.closePath();
+        g.fill();
+        g.fillRect(cx - 0.06, cy - 0.01, 0.12, 0.09);
+      }
+      g.restore();
+    };
+    map.posts.forEach((p, i) => {
+      if (occupied(p)) badge(p, v.postOwners[i] ?? null, "post");
+    });
+    map.income.forEach((p, i) => {
+      if (occupied(p)) badge(p, v.incomeOwners[i] ?? null, "income");
+    });
+    baseTiles(map, v.seats.length).forEach((t, i) => {
+      if (!occupied(t)) return;
+      badge(t, v.baseOwners[i] ?? null, "base");
+      const taking = v.baseCapture?.[i];
+      if (!taking) return;
+      const need = RULES.baseCaptureRounds;
+      const c = this.pal.seats[taking.seat]!;
+      for (let k = 0; k < need; k++) {
+        g.fillStyle = k < taking.rounds ? c : alpha(colourHex(this.pal.paper), 0.85);
+        g.strokeStyle = alpha(colourHex(this.pal.ink), 0.7);
+        g.lineWidth = 0.02;
+        g.beginPath();
+        g.arc(t.x + 0.8 - (need - 1 - k) * 0.12, t.y + 0.45, 0.045, 0, Math.PI * 2);
+        g.fill();
+        g.stroke();
+      }
     });
   }
 

@@ -26,7 +26,7 @@ import {
 import { baseTiles } from "../game/visibility.js";
 import type { SeatPublic } from "../game/view.js";
 
-const esc = (v: unknown) =>
+export const esc = (v: unknown) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 const glyph = (kind: UnitKind) => unitBadgeSvg(kind);

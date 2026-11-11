@@ -5,13 +5,14 @@ import { getMap, registerMap } from "../game/maps.js";
 import { replaySteps, type ReplayLog, type ReplayStep } from "../game/replay.js";
 import { useTuning } from "../game/tuning.js";
 import { pathTo } from "../game/movement.js";
-import { UNITS, UNIT_KINDS } from "../game/units.js";
+import { UNITS, UNIT_KINDS, hasTrait } from "../game/units.js";
+import { RULES } from "../game/constants.js";
 import { baseTiles } from "../game/visibility.js";
 import type { Facing, GameEvent, Point, Unit, UnitKind } from "../game/types.js";
 import type { PlayerView } from "../game/view.js";
 import { Board } from "./board.js";
 import { attachGestures } from "./camera.js";
-import { playerName, renderPanel, renderTopBar, resignConfirm, unitLabel } from "./panel.js";
+import { esc, playerName, renderPanel, renderTopBar, resignConfirm, unitLabel } from "./panel.js";
 import {
   defaultFacing,
   draftProblem,
@@ -912,10 +913,43 @@ function cancelAim() {
   }
 }
 
+/**
+ * What a unit standing on a site is doing to it, in words for the tooltip:
+ * the badge on the board says whose it is; this says what happens next.
+ */
+function siteLine(u: Unit): string {
+  const v = s.view;
+  if (!v) return "";
+  const whose = (o: number | null) => (o === null ? "neutral" : o === v.seat ? "yours" : `${esc(playerName(s, o))}'s`);
+  const next = (o: number | null) => (o === null ? `${u.seat === v.seat ? "yours" : `${esc(playerName(s, u.seat))}'s`}` : "neutral");
+  const post = s.map.posts.findIndex((p) => samePoint(p, u));
+  if (post >= 0) {
+    const o = v.postOwners[post] ?? null;
+    return o === u.seat ? `On a command post: ${whose(o)}.` : `On a command post (${whose(o)}): ${next(o)} at the end of the round.`;
+  }
+  const inc = s.map.income.findIndex((p) => samePoint(p, u));
+  if (inc >= 0) {
+    const o = v.incomeOwners[inc] ?? null;
+    if (o === u.seat) return `On an income site: ${whose(o)}.`;
+    return hasTrait(u.kind, "engineer") ? `On an income site (${whose(o)}): ${next(o)} at the end of the round.` : `On an income site (${whose(o)}): only an engineer can take it.`;
+  }
+  const bi = baseTiles(s.map, v.seats.length).findIndex((t) => samePoint(t, u));
+  if (bi >= 0) {
+    const o = v.baseOwners[bi] ?? null;
+    if (o === u.seat) return `On a base tile: ${whose(o)}.`;
+    const need = hasTrait(u.kind, "engineer") ? RULES.engineerBaseCaptureRounds : RULES.baseCaptureRounds;
+    const held = v.baseCapture?.[bi]?.seat === u.seat ? v.baseCapture[bi]!.rounds : 0;
+    const left = need - held;
+    return `On a base tile (${whose(o)}): ${next(o)} after ${left} more round${left === 1 ? "" : "s"} here.`;
+  }
+  return "";
+}
+
 function showTooltip(tile: Point, sx: number, sy: number) {
   const u = unitAt(s, tile);
   if (u) {
-    tooltip.innerHTML = `<strong>${unitLabel(s, u)}</strong><span>${u.hp} / ${UNITS[u.kind].hp} hp · facing ${facingName(u.facing)}</span>`;
+    const site = siteLine(u);
+    tooltip.innerHTML = `<strong>${unitLabel(s, u)}</strong><span>${u.hp} / ${UNITS[u.kind].hp} hp · facing ${facingName(u.facing)}</span>${site ? `<span>${site}</span>` : ""}`;
     tooltip.style.left = `${sx + 14}px`;
     tooltip.style.top = `${sy + 14}px`;
     tooltip.hidden = false;
