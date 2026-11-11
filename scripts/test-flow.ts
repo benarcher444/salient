@@ -27,6 +27,11 @@ interface Hooks {
   busy(): boolean;
   log(): string[];
   replay(): { index: number; total: number; playing: boolean; units: number } | null;
+  draft(): {
+    moves: { unitId: number; steps: number; end: { x: number; y: number } | null }[];
+    routes: { unitId: number; to: { x: number; y: number } }[];
+    myRoutes: { unitId: number; to: { x: number; y: number } }[];
+  } | null;
 }
 // The hooks appear once the page's module has run, a moment after the HTML.
 const hooks = <T>(page: Page, fn: (h: Hooks) => T) =>
@@ -148,6 +153,57 @@ await waitFor(sam.page, "Sam's round 2", async () => (await hooks(sam.page, (h) 
 const samUnits = await hooks(sam.page, (h) => h.myUnits());
 check("Sam has two units", samUnits.length === 2, JSON.stringify(samUnits) + " " + ((await sam.page.textContent("#panel")) ?? "").slice(0, 300));
 check("neither can see the other's base yet", (await hooks(alex.page, (h) => h.enemyUnits().length)) === 0);
+
+console.log("\nA route over several rounds\n");
+{
+  // Alex sends a rifleman to the junction, too far for one round's move.
+  const goal = { x: 12, y: 8 };
+  const walker = (await hooks(alex.page, (h) => h.myUnits()))[0]!;
+  const reach = (await alex.page.evaluate(`window.__salient.reach(${walker.id})`)) as { x: number; y: number }[];
+  check("the junction is beyond one round's reach", !reach.some((t) => t.x === goal.x && t.y === goal.y));
+  await tapTile(alex.page, walker.x, walker.y);
+  await tapTile(alex.page, goal.x, goal.y);
+  const draft = (await hooks(alex.page, (h) => h.draft()))!;
+  const leg = draft.moves.find((m) => m.unitId === walker.id);
+  check("a far tile becomes a route", draft.routes.some((r) => r.unitId === walker.id && r.to.x === goal.x && r.to.y === goal.y), JSON.stringify(draft));
+  check("and this round's move is as far along it as the unit can go", !!leg && leg.steps > 0 && !!leg.end && reach.some((t) => t.x === leg.end!.x && t.y === leg.end!.y), JSON.stringify(leg));
+  const panel = (await alex.page.textContent("#panel")) ?? "";
+  check("the panel says how many rounds it takes", /route: \d+ rounds to go/.test(panel) && panel.includes("Cancel route"), panel.slice(0, 200));
+  check("the unit then follows the pointer, as after an ordinary move", panel.includes("follow the pointer"));
+  await alex.page.mouse.move(10, 10);
+  await alex.page.screenshot({ path: "screenshots/flow-route.png" });
+  await alex.page.keyboard.press("Escape");
+  await alex.page.keyboard.press("Escape");
+  await alex.page.click('[data-action="submit"]');
+  await sam.page.click('[data-action="submit"]');
+  await waitFor(alex.page, "round 3", async () => {
+    const st = await hooks(alex.page, (h) => h.phase());
+    if (st?.phase === "attack") {
+      for (const p of [alex, sam]) if (await p.page.locator('[data-action="end-attacks"]').count()) await p.page.click('[data-action="end-attacks"]');
+    }
+    return st?.phase === "planning" && st.round === 3;
+  }, 20_000);
+  const moved = (await hooks(alex.page, (h) => h.myUnits())).find((u) => u.id === walker.id)!;
+  check("the server moved it only this round's leg", !!leg?.end && moved.x === leg.end.x && moved.y === leg.end.y, `${moved.x},${moved.y}`);
+  const next = async () => {
+    const d = (await hooks(alex.page, (h) => h.draft()))!;
+    return { leg: d.moves.find((m) => m.unitId === walker.id), routed: d.routes.some((r) => r.unitId === walker.id && r.to.x === goal.x), kept: d.myRoutes.some((r) => r.unitId === walker.id) };
+  };
+  const round3 = await next();
+  check("the next round starts with the next leg planned", !!round3.leg && round3.leg.steps > 0 && round3.routed, JSON.stringify(round3));
+  check("the server kept the destination for its owner", round3.kept);
+  await alex.page.reload();
+  await waitFor(alex.page, "the state after reloading", async () => (await hooks(alex.page, (h) => h.phase()))?.round === 3);
+  const reloaded = await next();
+  check("and a reload plans the same leg again (the route lives on the server)", JSON.stringify(reloaded) === JSON.stringify(round3), JSON.stringify(reloaded));
+  await tapTile(alex.page, moved.x, moved.y);
+  await alex.page.click('[data-action="cancel-route"]');
+  const cancelled = await next();
+  check("Cancel route keeps this round's leg and drops the rest", !!cancelled.leg?.steps && !cancelled.routed, JSON.stringify(cancelled));
+  // Stop aiming, then deselect.
+  await alex.page.keyboard.press("Escape");
+  await alex.page.keyboard.press("Escape");
+}
 
 console.log("\nMarching until someone has a shot\n");
 let fired = false;

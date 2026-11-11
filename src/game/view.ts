@@ -4,7 +4,7 @@
 import { readyShooters } from "./rules.js";
 import { baseTilesOwned, unitVisibleTo, visibleTiles } from "./visibility.js";
 import { getMap } from "./maps.js";
-import type { GameEvent, GameState, Orders, Phase, Seat, Unit } from "./types.js";
+import type { GameEvent, GameState, Orders, Phase, RouteOrder, Seat, Unit } from "./types.js";
 
 export interface SeatPublic {
   seat: Seat;
@@ -42,6 +42,11 @@ export interface PlayerView {
   baseCapture: ({ seat: Seat; rounds: number } | null)[];
   /** The viewer's own submitted orders this round, if any. */
   myOrders: Orders | null;
+  /**
+   * The viewer's own standing destinations (units headed further than one
+   * round's move), from its last accepted orders. Never anyone else's.
+   */
+  myRoutes: RouteOrder[];
   attackTurn: Seat | null;
   /** Own units that have already acted this attack phase. */
   acted: number[];
@@ -82,6 +87,10 @@ export function viewFor(state: GameState, seat: Seat | null): PlayerView {
     baseOwners: [...state.baseOwners],
     baseCapture: structuredClone(state.baseCapture),
     myOrders: seat === null ? null : structuredClone(state.orders[seat] ?? null),
+    myRoutes:
+      seat === null || over
+        ? []
+        : (state.routes?.[seat] ?? []).filter((r) => state.units.some((u) => u.id === r.unitId && u.seat === seat)).map((r) => structuredClone(r)),
     attackTurn: state.attackTurn,
     acted: state.actedUnitIds.filter((id) => units.some((u) => u.id === id && u.seat === seat)),
     readyShooters:
@@ -151,6 +160,7 @@ export function stateFromView(v: PlayerView): GameState {
     baseOwners: v.baseOwners,
     baseCapture: v.baseCapture,
     orders: v.seats.map(() => null),
+    routes: v.seats.map((p) => (p.seat === v.seat ? (v.myRoutes ?? []) : [])),
     attackTurn: v.attackTurn,
     actedUnitIds: v.acted,
     burst: v.burst,

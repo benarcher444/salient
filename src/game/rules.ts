@@ -4,7 +4,7 @@
 // a game is fully described by its seed and its list of actions.
 import { RULES } from "./constants.js";
 import { blastTiles, commanded, damageFor, flankOf, previewShot, rollShot, shieldFactor } from "./combat.js";
-import { facingToward, samePoint } from "./grid.js";
+import { facingToward, inBounds, samePoint } from "./grid.js";
 import { getMap } from "./maps.js";
 import { validatePath } from "./movement.js";
 import { traceLine } from "./los.js";
@@ -45,6 +45,7 @@ export function newGame(mapId: string, seatCount: number): GameState {
     baseOwners: baseTiles(map, seatCount).map((t) => t.home),
     baseCapture: baseTiles(map, seatCount).map(() => null),
     orders: Array.from({ length: seatCount }, () => null),
+    routes: Array.from({ length: seatCount }, () => []),
     attackTurn: null,
     actedUnitIds: [],
     burst: null,
@@ -117,6 +118,8 @@ function submitOrders(map: MapDef, state: GameState, seat: Seat, orders: Orders,
   validateOrders(map, state, seat, orders);
   // Re-submitting before everyone is in replaces the earlier orders.
   state.orders[seat] = structuredClone(orders);
+  // The standing destinations go with them, and stay for later rounds.
+  state.routes[seat] = structuredClone(orders.routes ?? []);
   maybeResolvePlanning(map, state, events);
 }
 
@@ -145,6 +148,19 @@ export function validateOrders(map: MapDef, state: GameState, seat: Seat, orders
     const k = `${end.x},${end.y}`;
     if (destinations.has(k)) throw new RuleError("duplicate_destination");
     destinations.add(k);
+  }
+
+  // Standing destinations: lenient, since the tile may be fogged or out of
+  // reach for now. Only that the unit is yours, the tile is on the map, and
+  // one per unit.
+  const routed = new Set<number>();
+  for (const r of orders.routes ?? []) {
+    if (routed.has(r.unitId)) throw new RuleError("duplicate_order", `route for unit ${r.unitId}`);
+    routed.add(r.unitId);
+    ownUnit(state, seat, r.unitId);
+    if (!Number.isInteger(r.to.x) || !Number.isInteger(r.to.y) || !inBounds(map, r.to.x, r.to.y)) {
+      throw new RuleError("bad_path", `route for unit ${r.unitId}`);
+    }
   }
 
   let cost = 0;
@@ -619,6 +635,7 @@ function eliminate(state: GameState, seat: Seat, events: GameEvent[]) {
   s.eliminated = true;
   state.units = state.units.filter((u) => u.seat !== seat);
   state.orders[seat] = null;
+  state.routes[seat] = [];
   events.push({ type: "eliminated", seat });
 }
 

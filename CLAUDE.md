@@ -124,6 +124,28 @@ along its route until every tile holds one unit. A unit that fired
 (`unit.fired`, set by an attack, cleared once the next moves resolve) may
 not move in the next planning phase, only turn (`fired_cannot_move`).
 
+**Routes can span several rounds, like Civilization's.** The owner asked
+for it. Picking a tile beyond the selected unit's reach plans the whole way
+there (`reachable` with an `Infinity` budget, avoiding enemies you can see);
+this round's move is the longest start of it within `moveBudget`, facing the
+way it walks, and the destination goes in `Orders.routes`. The server only
+*stores* it (`state.routes[seat]`, replaced by each accepted set of orders
+and kept across rounds, which orders are not; sent back as `view.myRoutes`
+to that seat alone) and never moves a unit by itself: each planning phase
+the browser (`continueRoutes` in `game.ts`) fills in the next leg as an
+ordinary move, drops the route when the unit is there or the way is shut,
+and the player still locks in. Server-side so a reload or another device
+carries on the route; the browser plans the legs because it alone knows
+what the player can see. A route's leg is cut short rather than finish on a
+teammate's tile (`untangleLegs`); a unit that fired gets the route and a
+turn-only move. A move within reach, Clear order or Delete drops the route;
+the panel's Cancel route keeps this round's leg. The board draws the rest
+faint and dashed, with a numbered marker where each later round's leg ends
+(2 is next round) and a ring on the destination. Validation is lenient (your
+unit, a tile on the map, one each): the destination may be fogged. Orders
+without `routes` (every older log, and the bots) mean none, so nothing
+replays differently.
+
 **Enemies block shots; your own side doesn't.** `traceLine` returns the tiles
 a line passes through, and `previewShot` refuses a shot (`enemy_in_way`)
 when an enemy stands on one. Only enemies the shooter's side can see count

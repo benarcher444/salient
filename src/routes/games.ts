@@ -164,9 +164,15 @@ export function gameRoutes(app: FastifyInstance) {
 }
 
 /** zod gives facings as plain numbers; the rules want the Facing type. Already range-checked. */
-function normaliseOrders(o: { moves: { unitId: number; path: { x: number; y: number }[]; facing: number }[]; spawns: { kind: Orders["spawns"][number]["kind"]; x: number; y: number; facing: number }[] }): Orders {
+function normaliseOrders(o: {
+  moves: { unitId: number; path: { x: number; y: number }[]; facing: number }[];
+  spawns: { kind: Orders["spawns"][number]["kind"]; x: number; y: number; facing: number }[];
+  routes?: { unitId: number; to: { x: number; y: number } }[];
+}): Orders {
   return {
     moves: o.moves.map((m) => ({ ...m, facing: m.facing as Facing })),
     spawns: o.spawns.map((s) => ({ ...s, facing: s.facing as Facing })),
+    // Only when sent, so orders from before routes are logged as they were.
+    ...(o.routes ? { routes: o.routes } : {}),
   };
 }

@@ -2,13 +2,13 @@
 // orders being drafted and what is selected. Derived questions (where can this
 // unit go, what can it shoot) are answered with the same rule functions the
 // server uses, run on the slice of the game this player can see.
-import { facingToward } from "../game/grid.js";
+import { facingToward, samePoint } from "../game/grid.js";
 import type { Tuning } from "../game/tuning.js";
-import { reachable, type Reach } from "../game/movement.js";
+import { moveBudget, pathTo, reachable, type Reach } from "../game/movement.js";
 import { targetsFor, validateOrders } from "../game/rules.js";
 import { UNITS } from "../game/units.js";
 import { spawnTiles, visibleTiles } from "../game/visibility.js";
-import { RuleError, ERROR_TEXT, type Facing, type GameState, type MapDef, type Orders, type Point, type Seat, type Unit } from "../game/types.js";
+import { RuleError, ERROR_TEXT, type Facing, type GameState, type MapDef, type Orders, type Point, type RouteOrder, type Seat, type Unit } from "../game/types.js";
 import { stateFromView, type PlayerView } from "../game/view.js";
 
 export interface Boot {
@@ -60,7 +60,7 @@ export interface ClientState {
   replay: { index: number; total: number; playing: boolean; speed: number; loading?: boolean } | null;
 }
 
-export const emptyOrders = (): Orders => ({ moves: [], spawns: [] });
+export const emptyOrders = (): Orders => ({ moves: [], spawns: [], routes: [] });
 
 /** The slice of the game this player can see, shaped for the rule helpers. */
 export const partialState = (s: ClientState): GameState => stateFromView(s.view!);
@@ -80,6 +80,10 @@ export function isMyAttackTurn(s: ClientState): boolean {
   return !!v && v.seat !== null && v.phase === "attack" && v.attackTurn === v.seat;
 }
 
+/** Tiles of enemies this player can see: a route may end on one, never pass it. */
+const enemyTiles = (s: ClientState, unit: Unit) =>
+  new Set(s.view!.units.filter((u) => u.seat !== unit.seat).map((u) => u.y * s.map.width + u.x));
+
 const reachCache = new WeakMap<Unit, Reach>();
 /** Where a unit can go, avoiding enemies this player can see. */
 export function reachOf(s: ClientState, unit: Unit): Reach {
@@ -90,11 +94,76 @@ export function reachOf(s: ClientState, unit: Unit): Reach {
     reachCache.set(unit, r);
   }
   if (!r) {
-    const blocked = new Set(s.view!.units.filter((u) => u.seat !== unit.seat).map((u) => u.y * s.map.width + u.x));
-    r = reachable(s.map, unit, blocked);
+    r = reachable(s.map, unit, enemyTiles(s, unit));
     reachCache.set(unit, r);
   }
   return r;
+}
+
+// --- Routes over several rounds ---------------------------------------------
+// A tile beyond this round's reach becomes a standing destination: the
+// whole route is planned with no budget, this round's move is the part of it
+// the unit can walk now, and the rest waits for the next planning phases.
+
+const fullReachCache = new WeakMap<Unit, Reach>();
+/** Everywhere a unit could get to over any number of rounds, avoiding enemies this player can see. */
+export function fullReachOf(s: ClientState, unit: Unit): Reach {
+  let r = fullReachCache.get(unit);
+  if (!r) {
+    r = reachable(s.map, unit, enemyTiles(s, unit), Infinity);
+    fullReachCache.set(unit, r);
+  }
+  return r;
+}
+
+/** The whole way to a tile from where the unit stands now, or null if there is none. */
+export function fullPathTo(s: ClientState, unit: Unit, to: Point): Point[] | null {
+  return pathTo(s.map, fullReachOf(s, unit), to);
+}
+
+export function routeFor(s: ClientState, unitId: number): RouteOrder | undefined {
+  return s.draft.routes?.find((r) => r.unitId === unitId);
+}
+
+/** How far along `path` (a fullPathTo) the unit gets each round: the index after each leg's last tile. */
+export function legBreaks(s: ClientState, unit: Unit, path: readonly Point[], firstLeg: number): number[] {
+  const reach = fullReachOf(s, unit);
+  const budget = moveBudget(unit);
+  const cost = (i: number) => (i < 0 ? 0 : (reach.cost.get(path[i]!.y * s.map.width + path[i]!.x) ?? 0));
+  const breaks = [firstLeg];
+  let at = firstLeg;
+  while (at < path.length) {
+    const base = cost(at - 1);
+    let next = at;
+    while (next < path.length && cost(next) - base <= budget) next++;
+    at = Math.max(next, at + 1);
+    breaks.push(at);
+  }
+  return breaks;
+}
+
+/**
+ * This round's leg of a route: the longest start of the path the unit can
+ * walk this round (none, if it fired last round and may only turn).
+ */
+export function firstLeg(s: ClientState, unit: Unit, path: readonly Point[]): Point[] {
+  if (unit.fired) return [];
+  return path.slice(0, legBreaks(s, unit, path, 0)[1] ?? 0);
+}
+
+/**
+ * A drafted route as the board and panel show it: the whole path, how much
+ * of it this round's move covers, and where each later round's leg ends.
+ * `rounds` counts this one. null when the destination can't be reached now.
+ */
+export function routePlan(s: ClientState, unit: Unit, route: RouteOrder, orders: Orders = s.draft) {
+  const path = fullPathTo(s, unit, route.to);
+  if (!path || !path.length) return null;
+  const move = orders.moves.find((m) => m.unitId === unit.id)?.path ?? [];
+  let done = 0;
+  while (done < move.length && done < path.length && samePoint(move[done]!, path[done]!)) done++;
+  const breaks = legBreaks(s, unit, path, done);
+  return { path, done, ends: breaks.slice(1).map((b) => b - 1), rounds: breaks.length };
 }
 
 export function moveOrderFor(s: ClientState, unitId: number) {
