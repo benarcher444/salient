@@ -336,7 +336,9 @@ Use `scripts/simulate.ts` to see what a change does.
 fast with distance: `spread`, plus `closeQuarters`); riot (unarmed, hard to
 hit from the front: the shield cuts *hit chance* to 35%, `shieldFrontHit`;
 it was 10% with 130 health, and in 3xaupj riots drew 126 shots, 90 of them at
-5–10%, and corked every corridor, so the owner had it cut); sniper (`steady`: half accuracy after moving; `scoped`:
+5–10%, and corked every corridor, so the owner had it cut; the shotgun and
+the sniper are its answer, `shieldBreaker`: the shield only cuts their chance
+to 75%, `shieldBreakerHit`, so a shotgun hits one 71% of the time, a rifle 30%); sniper (`steady`: half accuracy after moving; `scoped`:
 worse the closer the target, and a long narrow strip of extra sight);
 commando (stealth, backstab, two shots, and a backstab from the next tile
 kills outright); heavy (`explosive`: a shell bursts on the target's tile hit

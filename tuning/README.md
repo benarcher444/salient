@@ -67,6 +67,7 @@ An `unarmed` unit ignores `range`, `optimal`, `accuracy`, `damage`, `arc` and
 | `spread` | Damage falls away with distance: full next to the target, down to a fraction at `range`. | `traits.spreadFarDamage` |
 | `explosive` | Every shot bursts on the target's tile: a hit does full damage to the target and blast damage to every unit on the tiles round it (either side, not through walls); a miss does blast damage to the target too. | `traits.splashDamage` |
 | `armoured` | Takes less damage from everything. (No class has it at the moment.) | `traits.armouredDamage` |
+| `shieldBreaker` | A shield in front of the target stops its shots far less (shotgun, sniper). | `traits.shieldBreakerHit` |
 
 Adding a brand new trait needs code (see `CLAUDE.md`); these files can give
 any class any of the existing ones.
@@ -107,3 +108,4 @@ any class any of the existing ones.
 | `traits.commandAccuracy` | Hit chance × this with an officer near. |
 | `traits.commandDamage` | Damage × this with an officer near. |
 | `traits.armouredDamage` | Armoured units take damage × this (0.8 = 20% less). |
+| `traits.shieldBreakerHit` | Against a shield from the front, a shield breaker's hit chance is × this instead of `shieldFrontHit` (0.75 = loses a quarter). |

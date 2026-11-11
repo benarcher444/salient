@@ -35,6 +35,7 @@ export const TRAITS = [
   "spread",
   "explosive",
   "armoured",
+  "shieldBreaker",
 ] as const;
 /**
  * unarmed: cannot shoot. engineer: can capture income sites. medic: allies
@@ -44,7 +45,8 @@ export const TRAITS = [
  * accuracy drops if it moved. scoped: accuracy drops the closer the target,
  * and it sees a long narrow strip ahead. closeQuarters: ignores cover up
  * close. spread: damage falls away with distance. explosive: hurts everything
- * next to the target too. armoured: takes less damage.
+ * next to the target too. armoured: takes less damage. shieldBreaker: a
+ * shield stops its shots far less (the shotgun's spread, the sniper's round).
  */
 export type Trait = (typeof TRAITS)[number];
 
@@ -116,6 +118,7 @@ export interface RulesTuning {
     commandAccuracy: number;
     commandDamage: number;
     armouredDamage: number;
+    shieldBreakerHit: number;
   };
 }
 
@@ -196,6 +199,7 @@ const TRAIT_NUMBERS: NumberRule[] = [
   ["commandAccuracy", 0, 10],
   ["commandDamage", 0, 10],
   ["armouredDamage", 0, 10],
+  ["shieldBreakerHit", 0, 1],
 ];
 
 function checkNumbers(file: string, obj: Record<string, unknown>, rules: NumberRule[], prefix = "") {

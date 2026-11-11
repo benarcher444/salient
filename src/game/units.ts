@@ -41,6 +41,8 @@ export function traitText(trait: Trait): string {
       return `Damage falls with distance, to ${Math.round(t.spreadFarDamage * 100)}% at max range.`;
     case "explosive":
       return `The blast does ${Math.round(t.splashDamage * 100)}% damage to everything next to the target, yours too, and to the target on a miss.`;
+    case "shieldBreaker":
+      return `A riot shield only cuts its hit chance to ${Math.round(t.shieldBreakerHit * 100)}%, not ${Math.round(t.shieldFrontHit * 100)}%.`;
     case "armoured":
       return `Takes ${pct(t.armouredDamage)} less damage.`;
   }

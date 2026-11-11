@@ -127,7 +127,9 @@ export function previewShot(map: MapDef, shooter: Unit, target: Unit, units: rea
   if (inCover && !ignoresCover) modifiers.push({ label: "Target in cover", factor: RULES.coverFactor });
   if (inCover && ignoresCover) modifiers.push({ label: "Cover ignored up close", factor: 1 });
   for (let i = 0; i < Math.min(obstructions, 3); i++) modifiers.push({ label: "Partly obstructed", factor: RULES.obstructionFactor });
-  if (flank === "front" && hasTrait(target.kind, "shield")) modifiers.push({ label: "Riot shield", factor: t.shieldFrontHit });
+  if (flank === "front" && hasTrait(target.kind, "shield")) {
+    modifiers.push(hasTrait(shooter.kind, "shieldBreaker") ? { label: "Riot shield (punches through)", factor: t.shieldBreakerHit } : { label: "Riot shield", factor: t.shieldFrontHit });
+  }
 
   for (const m of modifiers) chance *= m.factor;
   chance = Math.min(RULES.maxHitChance, Math.max(RULES.minHitChance, Math.round(chance)));
@@ -144,6 +146,12 @@ export function previewShot(map: MapDef, shooter: Unit, target: Unit, units: rea
     inCover: inCover && !ignoresCover,
     modifiers,
   };
+}
+
+/** What a shield in front of `target` does to `shooter`'s hit chance (1 = nothing). */
+export function shieldFactor(shooter: Pick<Unit, "kind">, target: Pick<Unit, "kind">, flank: Flank): number {
+  if (flank !== "front" || !hasTrait(target.kind, "shield")) return 1;
+  return hasTrait(shooter.kind, "shieldBreaker") ? RULES.traits.shieldBreakerHit : RULES.traits.shieldFrontHit;
 }
 
 export function damageFor(shooter: Unit, target: Unit, flank: Flank, officer = false): number {

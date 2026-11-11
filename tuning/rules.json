@@ -36,6 +36,7 @@
     "commandRange": 2,
     "commandAccuracy": 1.15,
     "commandDamage": 1.2,
-    "armouredDamage": 0.8
+    "armouredDamage": 0.8,
+    "shieldBreakerHit": 0.75
   }
 }

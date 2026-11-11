@@ -3,7 +3,7 @@
 // way the state changes, and it is deterministic given the roll function, so
 // a game is fully described by its seed and its list of actions.
 import { RULES } from "./constants.js";
-import { blastTiles, commanded, damageFor, flankOf, previewShot, rollShot } from "./combat.js";
+import { blastTiles, commanded, damageFor, flankOf, previewShot, rollShot, shieldFactor } from "./combat.js";
 import { facingToward, samePoint } from "./grid.js";
 import { getMap } from "./maps.js";
 import { validatePath } from "./movement.js";
@@ -449,7 +449,7 @@ function attack(
   if (hidden && !preview.possible && RULES.rulesRevision >= 1) {
     const aimed = previewShot(map, shooter, aimedAt, known);
     const flank = flankOf(shooter, hidden);
-    const shield = flank === "front" && hasTrait(hidden.kind, "shield") ? RULES.traits.shieldFrontHit : 1;
+    const shield = shieldFactor(shooter, hidden, flank);
     preview = {
       ...aimed,
       flank,

@@ -11,5 +11,5 @@
   "damage": 60,
   "arc": 180,
   "shots": 1,
-  "traits": ["spread", "closeQuarters"]
+  "traits": ["spread", "closeQuarters", "shieldBreaker"]
 }
