@@ -1,9 +1,9 @@
 {
   "name": "Healer",
-  "role": "Heals units within 2 tiles every round. Carries a pistol.",
-  "cost": 100,
+  "role": "Heals the units next to it every round, even under fire. Carries a pistol.",
+  "cost": 70,
   "hp": 80,
-  "move": 4,
+  "move": 3,
   "sight": 8,
   "range": 5,
   "optimal": 3,

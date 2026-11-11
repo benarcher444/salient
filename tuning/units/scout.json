@@ -1,14 +1,14 @@
 {
   "name": "Scout",
   "role": "Fast, far-sighted, fragile. Finds targets for others.",
-  "cost": 70,
+  "cost": 60,
   "hp": 70,
-  "move": 6,
+  "move": 4,
   "sight": 11,
   "range": 6,
   "optimal": 3,
   "accuracy": 75,
-  "damage": 18,
+  "damage": 22,
   "arc": 150,
   "shots": 1,
   "traits": []

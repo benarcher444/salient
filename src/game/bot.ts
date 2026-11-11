@@ -182,7 +182,12 @@ export function planOrders(view: PlayerView, random: () => number, level: BotLev
     const reach = reachable(map, u, blocked);
     // A sniper with something to shoot holds still rather than spoil its aim.
     const hasShot = enemies.some((e) => previewShot(map, u, e, view.units).possible);
-    const score = (p: Point) => scoreTile(map, p, goal, enemies) + (tactics?.score(u, p) ?? 0);
+    // A healer only helps the allies touching it: it goes where the hurt are
+    // (where they stand now; they may move). A novice doesn't think of it.
+    const healing = level !== "novice" && hasTrait(u.kind, "medic");
+    const care = (p: Point) =>
+      healing ? mine.filter((o) => o.id !== u.id && Math.max(Math.abs(o.x - p.x), Math.abs(o.y - p.y)) <= RULES.medicRange).reduce((t, o) => t + Math.min(RULES.medicHeal, UNITS[o.kind].hp - o.hp), 0) / 4 : 0;
+    const score = (p: Point) => scoreTile(map, p, goal, enemies) + (tactics?.score(u, p) ?? 0) + care(p);
     let best: Point = u;
     let bestScore = hasTrait(u.kind, "steady") && hasShot ? -Infinity : score(u);
     const noise = level === "novice" ? NOVICE.noise : 0.3;

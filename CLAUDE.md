@@ -393,7 +393,9 @@ worse the closer the target, and a long narrow strip of extra sight);
 commando (stealth, backstab, two shots, and a backstab from the next tile
 kills outright); heavy (`explosive`: a shell bursts on the target's tile hit
 or miss, hurting everyone round it, either side, not through walls);
-healer (+5 to allies within 2 tiles, even under fire); officer (a rifleman
+healer (+10 to the allies touching it, diagonals too, on top of their own
+healing and even under fire: it was +5 within 2 tiles, and in bot games came
+to about 10 health over a healer's whole life, so the owner made it this); officer (a rifleman
 whose neighbours within 2 shoot better; `previewShot` needs the units list to
 see it, so every caller passes the units it knows). Hits vary ±10%
 (`damageVariance`, a second roll) and the panel and reticles show the hit
@@ -465,7 +467,14 @@ never hid (it showed stale health) and the editor showed seat buttons the map
 did not have. One global `[hidden] { display: none !important }` fixes all of
 them; keep it.
 
-**Stopping a background `npx tsx` task can leave the server running.** The
+**Stopping a background `npx tsx` task can leave it running.** This goes for
+any script, not only the server: stopping the task kills the shell, not the
+node processes under it. A cancelled `xargs -P 8` balance run left 25 node
+processes grinding the owner's machine for hours. Kill by command line
+(`Get-CimInstance Win32_Process` filtered on the script name), and keep heavy
+runs to a few cores: it is the owner's own computer.
+
+**Stopping a background `npx tsx` server can leave it running.** The
 wrapper dies, the node process keeps the port, and a "restarted" server fails
 with EADDRINUSE while the old code goes on answering — so a suite tests the
 old code and reports a 404 for a route that exists. Kill by the port's PID

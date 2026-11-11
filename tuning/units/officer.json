@@ -1,9 +1,9 @@
 {
   "name": "Officer",
   "role": "A rifleman who makes the units around him shoot better.",
-  "cost": 150,
+  "cost": 170,
   "hp": 100,
-  "move": 4,
+  "move": 3,
   "sight": 8,
   "range": 8,
   "optimal": 5,

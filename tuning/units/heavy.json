@@ -1,9 +1,9 @@
 {
   "name": "Heavy",
   "role": "Slow. Fires explosives that hurt everything around the target.",
-  "cost": 160,
+  "cost": 180,
   "hp": 120,
-  "move": 3,
+  "move": 2,
   "sight": 7,
   "range": 8,
   "optimal": 5,

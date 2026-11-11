@@ -22,7 +22,7 @@ export function traitText(trait: Trait): string {
         ? `Captures income sites, and base tiles in ${RULES.engineerBaseCaptureRounds === 1 ? "one round" : `${RULES.engineerBaseCaptureRounds} rounds`} a step.`
         : "Captures income sites.";
     case "medic":
-      return `Allies within ${RULES.medicRange} tiles heal +${RULES.medicHeal} at round end, even under fire.`;
+      return `${RULES.medicRange === 1 ? "Allies next to it (diagonals too)" : `Allies within ${RULES.medicRange} tiles`} heal +${RULES.medicHeal} more at round end, even under fire.`;
     case "command":
       return `Allies within ${t.commandRange} tiles get ${Math.round((t.commandAccuracy - 1) * 100)}% more accuracy and ${Math.round((t.commandDamage - 1) * 100)}% more damage.`;
     case "shield":

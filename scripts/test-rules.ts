@@ -254,7 +254,9 @@ section("Movement");
 {
   const m = board("move-forest", (b) => b.pen().rect(1, 0, 11, 12, "forest"));
   const reach = reachable(m, unit(1, 0, "rifleman", 0, 5), new Set());
-  check("woods cost double: 2 steps in, not 3", reach.cost.has(5 * m.width + 2) && !reach.cost.has(5 * m.width + 3));
+  // Each step into woods costs two: a move of n gets floor(n / 2) steps in.
+  const steps = Math.floor(UNITS.rifleman.move / 2);
+  check(`woods cost double: ${steps} step(s) in, not ${steps + 1}`, reach.cost.has(5 * m.width + steps) && !reach.cost.has(5 * m.width + steps + 1));
 }
 
 // ---------------------------------------------------------------------------
@@ -519,7 +521,8 @@ const row = (y: number, ...xs: number[]) => xs.map((x) => ({ x, y }));
   check("a unit can follow one moving ahead of it", pos(at(r, 1)) === "4,6" && pos(at(r, 2)) === "5,6", `${pos(at(r, 1))} ${pos(at(r, 2))}`);
 }
 {
-  const s = stateOn("lockstep", [unit(1, 0, "rifleman", 2, 6), unit(2, 1, "rifleman", 5, 6, { facing: W })]);
+  // A scout: a four-step route, more than a rifleman's move.
+  const s = stateOn("lockstep", [unit(1, 0, "scout", 2, 6), unit(2, 1, "rifleman", 5, 6, { facing: W })]);
   const { state: r, events } = resolve(s, [{ unitId: 1, path: row(6, 3, 4, 5, 6), facing: N }]);
   const mover = at(r, 1)!;
   check("walking into an unseen enemy stops you in front of it", pos(mover) === "4,6", pos(mover));
@@ -811,22 +814,24 @@ section("Upkeep: captures, income, healing");
   check("a held post is a spawn tile", mine.some((p) => p.x === 5 && p.y === 5));
   check("the tiles beside it are not", !mine.some((p) => Math.max(Math.abs(p.x - 5), Math.abs(p.y - 5)) === 1));
 
-  // A healer at (6,4); medicRange is 2.
+  // A healer at (6,4); allies at medicRange (diagonally too) and one beyond.
+  const R = RULES.medicRange;
   s.units = [
-    unit(7, 0, "rifleman", 2, 2, { hp: 50 }),
-    unit(8, 0, "rifleman", 6, 2, { hp: 50 }),
+    unit(7, 0, "rifleman", 0, 0, { hp: 50 }),
+    unit(8, 0, "rifleman", 6 - R, 4 - R, { hp: 50 }),
     unit(9, 0, "healer", 6, 4),
-    unit(10, 0, "rifleman", 9, 4, { hp: 50 }),
-    unit(11, 0, "rifleman", 4, 5, { hp: 50, damaged: true }),
+    unit(10, 0, "rifleman", 6 + R + 1, 4, { hp: 50 }),
+    unit(11, 0, "rifleman", 6, 4 + R, { hp: 50, damaged: true }),
     unit(12, 0, "rifleman", 1, 9, { hp: 50 }),
     unit(13, 0, "engineer", 2, 9),
   ];
   s = resolve(s, [], []).state;
   const heal = RULES.healPerRound;
   check("an unhurt unit heals healPerRound a round", at(s, 7)!.hp === 50 + heal, `${at(s, 7)!.hp}`);
-  check("and medicHeal more within medicRange of a healer", at(s, 8)!.hp === 50 + heal + RULES.medicHeal, `${at(s, 8)!.hp}`);
+  check("and medicHeal more within medicRange of a healer, diagonals counting", at(s, 8)!.hp === 50 + heal + RULES.medicHeal, `${at(s, 8)!.hp}`);
   check("but not one tile further", at(s, 10)!.hp === 50 + heal, `${at(s, 10)!.hp}`);
   check("a unit hit this round still gets the healer's share", at(s, 11)!.hp === 50 + RULES.medicHeal, `${at(s, 11)!.hp}`);
+  check("the healer's tuning: +10 to the tiles next to it", RULES.medicHeal === 10 && RULES.medicRange === 1);
   check("engineers no longer heal", at(s, 12)!.hp === 50 + heal, `${at(s, 12)!.hp}`);
 }
 {
@@ -1070,6 +1075,9 @@ section("Replay");
   let g = newGame("crossroads", 2);
   const botRandom = streamFor("replay-bots", 0);
   let waited = 0;
+  // The replay's last step is the last action that changed something: a set
+  // of orders that only waited for the other side is not a step.
+  let shown = g;
   for (let seq = 0; seq < 400 && g.phase !== "over" && g.round <= 12; ) {
     let acted = false;
     for (let seat = 0; seat < 2 && g.phase !== "over"; seat++) {
@@ -1078,6 +1086,7 @@ section("Replay");
       const action = { ...choice, seat } as Action;
       const r = applyAction(g, action, streamFor(log.seed, seq));
       if (r.events.length === 0) waited++;
+      else shown = r.state;
       g = r.state;
       log.actions.push({ seq, action });
       seq++;
@@ -1088,7 +1097,7 @@ section("Replay");
   const steps = replaySteps("crossroads", log);
   const last = steps[steps.length - 1]!;
   check("a replay starts from the empty board", steps[0]!.view.units.length === 0 && steps[0]!.view.round === 1);
-  check("and ends exactly where the game did", JSON.stringify(last.view) === JSON.stringify(viewFor(g, null)), `${last.view.round} vs ${g.round}`);
+  check("and ends exactly where the game did", JSON.stringify(last.view) === JSON.stringify(viewFor(shown, null)), `${last.view.round} vs ${shown.round}`);
   check("one step per action that changed something", steps.length === 1 + log.actions.length - waited, `${steps.length} steps, ${log.actions.length} actions, ${waited} waits`);
   check("with the fog lifted: every tile visible", last.view.visible.length === getMap("crossroads").width * getMap("crossroads").height);
   const a = streamFor("s", 1)();

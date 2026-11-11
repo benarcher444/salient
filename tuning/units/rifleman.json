@@ -3,7 +3,7 @@
   "role": "Dependable all-rounder.",
   "cost": 100,
   "hp": 100,
-  "move": 4,
+  "move": 3,
   "sight": 8,
   "range": 8,
   "optimal": 5,

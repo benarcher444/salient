@@ -80,7 +80,7 @@ any class any of the existing ones.
 | `baseIncome` | Gold every side gets at the end of every round. Income sites add their own value on top (set per site in the map). |
 | `healPerRound` | Health a unit regains at round end if it wasn't hit that round. |
 | `medicHeal` | Extra health at round end for a unit near a medic (the healer), hit or not. |
-| `medicRange` | How near, in tiles, counting diagonals as one (2 = the 5×5 square round the healer). |
+| `medicRange` | How near, in tiles, counting diagonals as one (1 = the 8 tiles touching the healer, 2 = the 5×5 square round it). |
 | `critChance` | Share of hits that are critical, from 0 to 1 (0.1 = one hit in ten). |
 | `critMultiplier` | A critical hit's damage multiplier. |
 | `damageVariance` | How much a hit's damage varies either way, from 0 to 1 (0.1 = 10% less to 10% more). |

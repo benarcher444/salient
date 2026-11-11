@@ -1,14 +1,14 @@
 {
   "name": "Commando",
   "role": "Unseen until close. Two shots a turn, fatal from behind.",
-  "cost": 140,
+  "cost": 120,
   "hp": 80,
-  "move": 5,
+  "move": 3,
   "sight": 8,
   "range": 4,
   "optimal": 2,
   "accuracy": 85,
-  "damage": 20,
+  "damage": 25,
   "arc": 120,
   "shots": 2,
   "traits": ["stealth", "backstab"]

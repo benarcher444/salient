@@ -3,7 +3,7 @@
   "role": "Deadly at long range once braced. Hopeless up close.",
   "cost": 150,
   "hp": 70,
-  "move": 3,
+  "move": 2,
   "sight": 9,
   "range": 14,
   "optimal": 12,
