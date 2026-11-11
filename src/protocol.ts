@@ -12,7 +12,7 @@ const id = z.number().int().positive();
 const orders = z.object({
   moves: z.array(z.object({ unitId: id, path: z.array(point).max(32), facing })).max(100),
   spawns: z.array(z.object({ kind: z.enum(UNIT_KINDS as [UnitKind, ...UnitKind[]]), x: coord, y: coord, facing })).max(40),
-  routes: z.array(z.object({ unitId: id, to: point })).max(100).optional(),
+  routes: z.array(z.object({ unitId: id, to: point, facing: facing.optional() })).max(100).optional(),
 });
 
 export const clientMessage = z.object({

@@ -28,9 +28,9 @@ interface Hooks {
   log(): string[];
   replay(): { index: number; total: number; playing: boolean; units: number } | null;
   draft(): {
-    moves: { unitId: number; steps: number; end: { x: number; y: number } | null }[];
-    routes: { unitId: number; to: { x: number; y: number } }[];
-    myRoutes: { unitId: number; to: { x: number; y: number } }[];
+    moves: { unitId: number; steps: number; end: { x: number; y: number } | null; facing: number }[];
+    routes: { unitId: number; to: { x: number; y: number }; facing?: number }[];
+    myRoutes: { unitId: number; to: { x: number; y: number }; facing?: number }[];
   } | null;
 }
 // The hooks appear once the page's module has run, a moment after the HTML.
@@ -170,6 +170,13 @@ console.log("\nA route over several rounds\n");
   const panel = (await alex.page.textContent("#panel")) ?? "";
   check("the panel says how many rounds it takes", /route: \d+ rounds to go/.test(panel) && panel.includes("Cancel route"), panel.slice(0, 200));
   check("the unit then follows the pointer, as after an ordinary move", panel.includes("follow the pointer"));
+  // A right click aims it: at the destination, not at the end of this round's leg.
+  await tapTile(alex.page, goal.x, goal.y + 3, "right");
+  const aimed = (await hooks(alex.page, (h) => h.draft()))!;
+  const aimedRoute = aimed.routes.find((r) => r.unitId === walker.id);
+  const aimedLeg = aimed.moves.find((m) => m.unitId === walker.id);
+  check("aiming a long route sets the facing it arrives with", aimedRoute?.facing === 180, JSON.stringify(aimedRoute));
+  check("while this round's leg still faces the way it walks", !!aimedLeg && aimedLeg.facing !== 180 && aimedLeg.facing === leg!.facing, JSON.stringify(aimedLeg));
   await alex.page.mouse.move(10, 10);
   await alex.page.screenshot({ path: "screenshots/flow-route.png" });
   await alex.page.keyboard.press("Escape");
@@ -192,6 +199,7 @@ console.log("\nA route over several rounds\n");
   const round3 = await next();
   check("the next round starts with the next leg planned", !!round3.leg && round3.leg.steps > 0 && round3.routed, JSON.stringify(round3));
   check("the server kept the destination for its owner", round3.kept);
+  check("and the facing aimed at the destination", (await hooks(alex.page, (h) => h.draft()))!.myRoutes.find((r) => r.unitId === walker.id)?.facing === 180);
   await alex.page.reload();
   await waitFor(alex.page, "the state after reloading", async () => (await hooks(alex.page, (h) => h.phase()))?.round === 3);
   const reloaded = await next();
@@ -203,6 +211,18 @@ console.log("\nA route over several rounds\n");
   // Stop aiming, then deselect.
   await alex.page.keyboard.press("Escape");
   await alex.page.keyboard.press("Escape");
+  // Click the unit itself, then right-click: it turns where it stands, and
+  // its planned move is dropped. A left click elsewhere instead keeps it.
+  await tapTile(alex.page, moved.x, moved.y);
+  await alex.page.mouse.move(10, 10, { steps: 4 });
+  await alex.page.keyboard.press("Escape");
+  const kept = await next();
+  check("clicking a unit with a move and backing out (Esc) leaves the move as it was", !!kept.leg?.steps && !kept.routed, JSON.stringify(kept));
+  // Still selected: clicking it again turns it on the spot too.
+  await tapTile(alex.page, moved.x, moved.y);
+  await tapTile(alex.page, moved.x - 2, moved.y, "right");
+  const turned = (await hooks(alex.page, (h) => h.draft()))!.moves.find((m) => m.unitId === walker.id);
+  check("clicking a unit then right-clicking turns it on the spot, dropping its move", !!turned && turned.steps === 0 && turned.facing === 270, JSON.stringify(turned));
 }
 
 console.log("\nMarching until someone has a shot\n");

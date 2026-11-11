@@ -161,6 +161,7 @@ export function validateOrders(map: MapDef, state: GameState, seat: Seat, orders
     if (!Number.isInteger(r.to.x) || !Number.isInteger(r.to.y) || !inBounds(map, r.to.x, r.to.y)) {
       throw new RuleError("bad_path", `route for unit ${r.unitId}`);
     }
+    if (r.facing !== undefined && !isFacing(r.facing)) throw new RuleError("bad_path", `route facing ${r.facing}`);
   }
 
   let cost = 0;
@@ -257,6 +258,8 @@ function resolveMoves(map: MapDef, state: GameState, events: GameEvent[]) {
     taken: Point[];
     active: boolean;
     bumped: boolean;
+    /** Stopped by an enemy (not just stepped back off a teammate's tile). */
+    metEnemy?: boolean;
   }
   const movers: Mover[] = [];
   for (const unit of state.units) {
@@ -308,6 +311,7 @@ function resolveMoves(map: MapDef, state: GameState, events: GameEvent[]) {
       if (refused.has(m)) {
         m.active = false;
         m.bumped = true;
+        m.metEnemy = true;
         m.unit.facing = facingToward(m.unit, p);
       } else {
         m.unit.facing = facingToward(m.unit, p);
@@ -349,6 +353,13 @@ function resolveMoves(map: MapDef, state: GameState, events: GameEvent[]) {
     if (!m.bumped) m.unit.facing = order.facing;
     if (m.taken.length > 0 || m.bumped || order.path.length === 0) {
       events.push({ type: "move", unitId: m.unit.id, seat: m.unit.seat, from: m.from, steps: m.taken, bumped: m.bumped });
+    }
+    // A route that runs into an enemy is over: the unit stops and waits for
+    // orders rather than carry on round it (the owner's call). Routes never
+    // move anyone on the server, so old logs still replay the same.
+    if (m.metEnemy) {
+      const routes = state.routes?.[m.unit.seat];
+      if (routes) state.routes[m.unit.seat] = routes.filter((r) => r.unitId !== m.unit.id);
     }
   }
 }

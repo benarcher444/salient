@@ -113,6 +113,12 @@ export interface SpawnOrder {
 export interface RouteOrder {
   unitId: number;
   to: Point;
+  /**
+   * Which way to face on arriving: the facing the player aimed at the
+   * destination. The legs before it face the way the unit walks. Missing:
+   * the way it walks in, too.
+   */
+  facing?: Facing;
 }
 
 export interface Orders {

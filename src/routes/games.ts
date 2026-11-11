@@ -173,12 +173,14 @@ export function gameRoutes(app: FastifyInstance) {
 function normaliseOrders(o: {
   moves: { unitId: number; path: { x: number; y: number }[]; facing: number }[];
   spawns: { kind: Orders["spawns"][number]["kind"]; x: number; y: number; facing: number }[];
-  routes?: { unitId: number; to: { x: number; y: number } }[];
+  routes?: { unitId: number; to: { x: number; y: number }; facing?: number }[];
 }): Orders {
   return {
     moves: o.moves.map((m) => ({ ...m, facing: m.facing as Facing })),
     spawns: o.spawns.map((s) => ({ ...s, facing: s.facing as Facing })),
     // Only when sent, so orders from before routes are logged as they were.
-    ...(o.routes ? { routes: o.routes } : {}),
+    ...(o.routes
+      ? { routes: o.routes.map((r) => ({ unitId: r.unitId, to: r.to, ...(r.facing !== undefined ? { facing: r.facing as Facing } : {}) })) }
+      : {}),
   };
 }

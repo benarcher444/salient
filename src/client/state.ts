@@ -8,7 +8,7 @@ import { moveBudget, pathTo, reachable, type Reach } from "../game/movement.js";
 import { targetsFor, validateOrders } from "../game/rules.js";
 import { UNITS } from "../game/units.js";
 import { spawnTiles, visibleTiles } from "../game/visibility.js";
-import { RuleError, ERROR_TEXT, type Facing, type GameState, type MapDef, type Orders, type Point, type RouteOrder, type Seat, type Unit } from "../game/types.js";
+import { RuleError, ERROR_TEXT, type Facing, type GameState, type MapDef, type MoveOrder, type Orders, type Point, type RouteOrder, type Seat, type Unit } from "../game/types.js";
 import { stateFromView, type PlayerView } from "../game/view.js";
 
 export interface Boot {
@@ -51,7 +51,16 @@ export interface ClientState {
    * Aiming the selected unit or deployment: it turns to follow the pointer
    * until a tap sets it. `before` is the facing to go back to on cancel.
    */
-  aiming: { before: Facing; selection: string } | null;
+  aiming: {
+    before: Facing;
+    selection: string;
+    /**
+     * Started by clicking the unit itself: it turns on the spot, and a right
+     * click cancels any move or route it had. The orders it had, to put back
+     * if the aim is cancelled (a left click elsewhere, Esc).
+     */
+    spot?: { move: MoveOrder | null; route: RouteOrder | null };
+  } | null;
   /**
    * Watching a finished game again, fog lifted: which step is showing, of
    * how many, whether it plays on by itself and how fast. null otherwise.
@@ -114,6 +123,14 @@ export function fullReachOf(s: ClientState, unit: Unit): Reach {
     fullReachCache.set(unit, r);
   }
   return r;
+}
+
+/**
+ * The way on along a route, walls only: where the unit would go if nothing
+ * were in the way. A route carries on along this, never round an enemy.
+ */
+export function wayOn(s: ClientState, unit: Unit, to: Point): Point[] | null {
+  return pathTo(s.map, reachable(s.map, unit, new Set(), Infinity), to);
 }
 
 /** The whole way to a tile from where the unit stands now, or null if there is none. */

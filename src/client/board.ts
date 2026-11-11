@@ -2,7 +2,7 @@
 // units and effects, in that order.
 import { damageRange, previewShot } from "../game/combat.js";
 import { RULES } from "../game/constants.js";
-import { facingAngle } from "../game/grid.js";
+import { facingAngle, facingToward } from "../game/grid.js";
 import { pathTo } from "../game/movement.js";
 import { UNIT_GLYPH, UNIT_SHAPE, UNIT_SIZE, shapeFront } from "../game/glyphs.js";
 import { UNITS, hasTrait } from "../game/units.js";
@@ -467,10 +467,20 @@ export class Board {
     // Every drafted move: its route and a ghost where it will end up.
     const orders = canPlan(s) ? s.draft : (v.myOrders ?? { moves: [], spawns: [] });
     // Routes over several rounds: the way on beyond this round's leg, fainter.
+    const routed = new Set<number>();
     for (const r of orders.routes ?? []) {
       const u = unitById(s, r.unitId);
       const plan = u && routePlan(s, u, r, orders);
-      if (u && plan) this.routeAhead(u, plan, mine, false);
+      if (!u || !plan) continue;
+      routed.add(u.id);
+      this.routeAhead(u, plan, mine, false);
+      // Where it will stand at the end, facing the way it was aimed (or the
+      // way it walks in): the arc the player is choosing.
+      const last = plan.path[plan.path.length - 1]!;
+      const before = plan.path.length > 1 ? plan.path[plan.path.length - 2]! : u;
+      const facing = r.facing ?? facingToward(before, last);
+      this.token(u, last.x + 0.5, last.y + 0.5, facingAngle(facing), 0.4, { ghost: true });
+      this.arc(last.x + 0.5, last.y + 0.5, u.kind, facing, mine, 0.1);
     }
     for (const m of orders.moves) {
       const u = unitById(s, m.unitId);
@@ -478,7 +488,8 @@ export class Board {
       if (m.path.length) this.route(u, m.path, mine, false);
       const end = m.path.length ? m.path[m.path.length - 1]! : u;
       if (m.path.length) this.token(u, end.x + 0.5, end.y + 0.5, facingAngle(m.facing), 0.5, { ghost: true });
-      this.arc(end.x + 0.5, end.y + 0.5, u.kind, m.facing, mine, 0.1);
+      // A unit on a long route shows its arc at the destination, not at this round's stop.
+      if (!routed.has(u.id)) this.arc(end.x + 0.5, end.y + 0.5, u.kind, m.facing, mine, 0.1);
     }
     orders.spawns.forEach((sp, i) => {
       const fake: Unit = { id: -1 - i, seat, kind: sp.kind, x: sp.x, y: sp.y, facing: sp.facing, hp: UNITS[sp.kind].hp, moved: false, damaged: false, fired: false };

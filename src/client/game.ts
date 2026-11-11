@@ -27,6 +27,7 @@ import {
   plannedEnd,
   reachOf,
   routeFor,
+  wayOn,
   targetsOf,
   unitAt,
   unitById,
@@ -519,22 +520,25 @@ function dropRoute(unitId: number) {
 
 /**
  * Send a unit towards a tile over as many rounds as it takes. Plans this
- * round's leg (facing the way it walks) and keeps the destination if the leg
- * doesn't get there. false if there is no way there that avoids the enemies
- * this player can see.
+ * round's leg and keeps the destination if the leg doesn't get there. Legs on
+ * the way face the way the unit walks; the leg that arrives takes
+ * `finalFacing`, the facing the player aimed at the destination. false if
+ * there is no way there that avoids the enemies this player can see.
  */
-function setRoute(unit: Unit, to: Point): boolean {
+function setRoute(unit: Unit, to: Point, finalFacing?: Facing): boolean {
   const path = fullPathTo(s, unit, to);
   if (!path || !path.length) return false;
   const leg = firstLeg(s, unit, path);
   const existing = moveOrderFor(s, unit.id);
-  const facing = leg.length ? facingToward(leg.length > 1 ? leg[leg.length - 2]! : unit, leg[leg.length - 1]!) : (existing?.facing ?? unit.facing);
+  const arrives = leg.length === path.length;
+  const walking = leg.length ? facingToward(leg.length > 1 ? leg[leg.length - 2]! : unit, leg[leg.length - 1]!) : (existing?.facing ?? unit.facing);
+  const facing = arrives && finalFacing !== undefined ? finalFacing : walking;
   if (existing) {
     existing.path = leg;
     existing.facing = facing;
   } else s.draft.moves.push({ unitId: unit.id, path: leg, facing });
   dropRoute(unit.id);
-  if (leg.length < path.length) (s.draft.routes ??= []).push({ unitId: unit.id, to: { x: to.x, y: to.y } });
+  if (!arrives) (s.draft.routes ??= []).push({ unitId: unit.id, to: { x: to.x, y: to.y }, ...(finalFacing !== undefined ? { facing: finalFacing } : {}) });
   untangleLegs();
   return true;
 }
@@ -563,12 +567,24 @@ function untangleLegs() {
   }
 }
 
-/** A new planning phase: each unit with a standing destination gets its next leg, or loses the route if it's there or can't get there. */
+/**
+ * A new planning phase: each unit with a standing destination gets its next
+ * leg, or loses the route if it's there, can't get there, or an enemy it can
+ * see stands on the way. A route never turns aside round an enemy: it stops
+ * and the unit waits for orders (the owner's call). The server already ended
+ * the routes of units an enemy stopped mid-move.
+ */
 function continueRoutes(v: PlayerView) {
   for (const r of v.myRoutes ?? []) {
     const u = unitById(s, r.unitId);
     if (!u || !isMine(s, u) || samePoint(u, r.to)) continue;
-    setRoute(u, r.to);
+    const way = wayOn(s, u, r.to);
+    const blocker = way?.find((p) => v.units.some((o) => o.seat !== u.seat && samePoint(o, p)));
+    if (!way || blocker) {
+      if (blocker) s.log.push({ round: v.round, html: `${unitLabel(s, u)}: route stopped, an enemy is in the way.` });
+      continue;
+    }
+    setRoute(u, r.to, r.facing);
   }
 }
 
@@ -594,13 +610,19 @@ function planningTap(p: Point, u: Unit | undefined, input: Input) {
   const selUnit = sel?.type === "unit" ? unitById(s, sel.id) : undefined;
   if (selUnit && isMine(s, selUnit)) {
     const order = moveOrderFor(s, selUnit.id);
-    // Tapping the ghost at the end of a route aims it: it follows the pointer until the next tap.
-    if (order && order.path.length && samePoint(plannedEnd(s, selUnit), p)) {
+    // Tapping the ghost at the end of a route (or a long route's destination)
+    // aims it: it follows the pointer until the next tap.
+    const route = routeFor(s, selUnit.id);
+    if ((order && order.path.length && samePoint(plannedEnd(s, selUnit), p)) || (route && samePoint(route.to, p))) {
       startAim();
       return;
     }
     if (u?.id === selUnit.id) {
-      s.selected = null;
+      // With a mouse, clicking it again turns it on the spot (a right click
+      // then sets that facing and cancels its move or route); otherwise it
+      // deselects.
+      if (input === "mouse") startAim(true);
+      else s.selected = null;
       return;
     }
   }
@@ -610,9 +632,11 @@ function planningTap(p: Point, u: Unit | undefined, input: Input) {
   const leaving = !!u && isMine(s, u) && !!moveOrderFor(s, u.id)?.path.length;
   if (u && isMine(s, u) && !(selUnit && isMine(s, selUnit) && leaving && u.id !== selUnit.id)) {
     s.selected = { type: "unit", id: u.id };
-    // With a mouse the unit turns to follow the pointer straight away: a
-    // right click sets that facing, a left click on a tile moves it instead.
-    if (input === "mouse") startAim();
+    // With a mouse the unit turns on the spot to follow the pointer straight
+    // away: a right click sets that facing (dropping any move or route it
+    // had: the owner's way to just turn a unit round), a left click on a tile
+    // moves it instead and leaves its orders as they were.
+    if (input === "mouse") startAim(true);
     return;
   }
   // A route may also end on an enemy's tile: take it if they leave, stop in front of them if not.
@@ -709,11 +733,14 @@ panel.addEventListener("click", (e) => {
       else startAim();
       break;
     case "clear-order":
+      // Settled: an aim in progress must not put the old orders back later.
+      s.aiming = null;
       s.draft.moves = s.draft.moves.filter((m) => m.unitId !== Number(el.dataset.unit));
       dropRoute(Number(el.dataset.unit));
       break;
     case "cancel-route":
       // This round's leg stays as an ordinary move; only the rest is dropped.
+      s.aiming = null;
       dropRoute(Number(el.dataset.unit));
       break;
     case "cancel-spawn":
@@ -790,6 +817,30 @@ function aimTarget(): { anchor: Point; get: () => Facing; set: (f: Facing) => vo
   if (sel?.type === "unit") {
     const u = unitById(s, sel.id);
     if (!u || !isMine(s, u)) return null;
+    // Aiming started by clicking the unit: it turns where it stands, and its
+    // move and route give way to that (put back if the aim is cancelled).
+    if (s.aiming?.spot) {
+      return {
+        anchor: u,
+        get: () => {
+          const m = moveOrderFor(s, u.id);
+          return m && !m.path.length ? m.facing : u.facing;
+        },
+        set: (facing) => {
+          dropRoute(u.id);
+          s.draft.moves = s.draft.moves.filter((m) => m.unitId !== u.id);
+          s.draft.moves.push({ unitId: u.id, path: [], facing });
+        },
+      };
+    }
+    // A route over several rounds is aimed at its destination: the facing it
+    // takes on arriving. This round's leg keeps facing the way it walks.
+    const route = routeFor(s, u.id);
+    if (route) {
+      const path = fullPathTo(s, u, route.to);
+      const walkIn = path && path.length ? facingToward(path.length > 1 ? path[path.length - 2]! : u, path[path.length - 1]!) : u.facing;
+      return { anchor: route.to, get: () => route.facing ?? walkIn, set: (f) => (route.facing = f) };
+    }
     return {
       anchor: plannedEnd(s, u),
       get: () => moveOrderFor(s, u.id)?.facing ?? u.facing,
@@ -818,17 +869,42 @@ function faceToward(world: Point): boolean {
   return true;
 }
 
-function startAim() {
+/** Start aiming the selection. `spot`: a unit turns where it stands (see ClientState.aiming). */
+function startAim(spot = false) {
+  const sel = s.selected;
+  if (spot && sel?.type === "unit") {
+    const move = moveOrderFor(s, sel.id);
+    const route = routeFor(s, sel.id);
+    s.aiming = {
+      before: 0,
+      selection: JSON.stringify(sel),
+      spot: { move: move ? structuredClone(move) : null, route: route ? structuredClone(route) : null },
+    };
+    const t = aimTarget();
+    if (!t) {
+      s.aiming = null;
+      return;
+    }
+    s.aiming.before = t.get();
+    return;
+  }
   const t = aimTarget();
   if (t) s.aiming = { before: t.get(), selection: JSON.stringify(s.selected) };
 }
 
 function cancelAim() {
-  if (s.aiming) aimTarget()?.set(s.aiming.before);
+  const spot = s.aiming?.spot;
+  const sel = s.selected;
+  if (spot && sel?.type === "unit") {
+    // Put back the move and route it had before it was turned on the spot.
+    s.draft.moves = s.draft.moves.filter((m) => m.unitId !== sel.id);
+    if (spot.move) s.draft.moves.push(spot.move);
+    dropRoute(sel.id);
+    if (spot.route) (s.draft.routes ??= []).push(spot.route);
+  } else if (s.aiming) aimTarget()?.set(s.aiming.before);
   s.aiming = null;
   // Following the pointer may have made a turn-on-the-spot order; one that
   // ends up facing where the unit already does is no order at all.
-  const sel = s.selected;
   if (sel?.type === "unit") {
     const u = unitById(s, sel.id);
     const order = u && moveOrderFor(s, u.id);
@@ -1164,7 +1240,7 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
     return u ? targetsOf(s, u).map((t) => t.id) : [];
   },
   readyShooters: () => s.view?.readyShooters ?? [],
-  draft: () => s.view && { moves: s.draft.moves.map((m) => ({ unitId: m.unitId, steps: m.path.length, end: m.path[m.path.length - 1] ?? null })), routes: s.draft.routes ?? [], myRoutes: s.view.myRoutes },
+  draft: () => s.view && { moves: s.draft.moves.map((m) => ({ unitId: m.unitId, steps: m.path.length, end: m.path[m.path.length - 1] ?? null, facing: m.facing })), routes: s.draft.routes ?? [], myRoutes: s.view.myRoutes },
   mapSize: () => ({ width: s.map.width, height: s.map.height }),
   log: () => s.log.map((l) => l.html),
   phase: () => s.view && { phase: s.view.phase, round: s.view.round, attackTurn: s.view.attackTurn, ready: s.view.seats.map((p) => p.ready) },

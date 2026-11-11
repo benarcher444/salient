@@ -1032,6 +1032,10 @@ section("Routes over several rounds (standing destinations)");
   check("the tile must be on the map", valid([{ unitId: 1, to: { x: m.width, y: 0 } }]) === "bad_path");
   check("one route per unit", valid([{ unitId: 1, to: far }, { unitId: 1, to: { x: 0, y: 0 } }]) === "duplicate_order");
   check("an unreachable or fogged tile is fine (it's only where the unit is headed)", valid([{ unitId: 2, to: { x: 9, y: 6 } }]) === "no error");
+  check("a route may say which way to face on arriving", valid([{ unitId: 1, to: far, facing: 135 } as { unitId: number; to: Point }]) === "no error");
+  check("but only a real facing", valid([{ unitId: 1, to: far, facing: 400 } as { unitId: number; to: Point }]) === "bad_path");
+  const aimed = applyAction(s, { type: "orders", seat: 0, orders: { ...orders0, routes: [{ unitId: 1, to: far, facing: S }] } }, roll(0.5)).state;
+  check("and keeps it for the rounds to come", viewFor(aimed, 0).myRoutes[0]?.facing === S);
 
   const after0 = applyAction(s, { type: "orders", seat: 0, orders: orders0 }, roll(0.5)).state;
   check("accepted routes are kept for the seat", after0.routes[0]!.length === 1 && after0.routes[0]![0]!.to.x === far.x);
@@ -1049,6 +1053,15 @@ section("Routes over several rounds (standing destinations)");
   check("routes change nothing about how moves resolve",
     JSON.stringify(applyAction(after0, { type: "orders", seat: 1, orders: { moves: [], spawns: [] } }, roll(0.5)).state.units) ===
     JSON.stringify(resolve(s, [{ unitId: 1, path: row(6, 3, 4) }]).state.units));
+  // An enemy stops the unit on its leg: the route is over, not steered round it.
+  const blocked = stateOn("lockstep", [unit(1, 0, "rifleman", 2, 6), unit(3, 1, "rifleman", 4, 6, { facing: W })]);
+  const met = applyAction(
+    applyAction(blocked, { type: "orders", seat: 0, orders: { moves: [{ unitId: 1, path: row(6, 3, 4), facing: E }], spawns: [], routes: [{ unitId: 1, to: far }] } }, roll(0.5)).state,
+    { type: "orders", seat: 1, orders: { moves: [], spawns: [] } },
+    roll(0.5),
+  ).state;
+  check("a unit an enemy stops loses its route", pos(at(met, 1)) === "3,6" && met.routes[0]!.length === 0, `${pos(at(met, 1))} ${JSON.stringify(met.routes[0])}`);
+  check("one that isn't stopped keeps it", r.routes[0]!.length === 1);
   const unlimited = reachable(m, unit(1, 0, "rifleman", 0, 0), new Set(), Infinity);
   check("reachable with no budget limit plans a route across the map", unlimited.cost.has((m.height - 1) * m.width + m.width - 1));
 }

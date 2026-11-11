@@ -146,7 +146,18 @@ faint and dashed, with a numbered marker where each later round's leg ends
 (2 is next round) and a ring on the destination. Validation is lenient (your
 unit, a tile on the map, one each): the destination may be fogged. Orders
 without `routes` (every older log, and the bots) mean none, so nothing
-replays differently.
+replays differently. The owner's later calls: a route keeps the facing aimed
+at its destination (`RouteOrder.facing`; aiming a routed unit turns its
+ghost at the destination, the legs on the way face the way it walks, and the
+leg that arrives takes the aimed facing). A route never steers round an
+enemy: a unit an enemy stops mid-move loses its route on the server
+(`metEnemy` in `resolveMoves`), and at the start of a round a route whose way
+on (`wayOn`, walls only) has a seen enemy on it is dropped, with a log line.
+Clicking your unit itself with a mouse (or clicking it again when selected)
+aims it on the spot (`s.aiming.spot`): a right click then sets that facing
+and cancels its move and route, so a unit on a route can just be turned
+round; Esc or a left click elsewhere puts its orders back. Clear order and
+Cancel route end such an aim, so it can't restore what they removed.
 
 **Enemies block shots; your own side doesn't.** `traceLine` returns the tiles
 a line passes through, and `previewShot` refuses a shot (`enemy_in_way`)
