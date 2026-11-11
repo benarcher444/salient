@@ -898,6 +898,41 @@ section("Upkeep: captures, income, healing");
     });
   check("heal at base: beside a command post you hold, a unit heals too", nearPost(house({ healOnlyNearBase: 1 })) === 50 + RULES.healPerRound);
   check("but not in a game from before rules revision 3", nearPost(house({ healOnlyNearBase: 1, rulesRevision: 2 })) === 50);
+
+  // Rules revision 4.
+  const rev3 = house({ rulesRevision: 3 });
+  withTuning(house({ healOnlyNearBase: 1 }), () => {
+    const hit = resolve(stateOn("upkeep", [unit(1, 0, "rifleman", 2, 2, { hp: 50, damaged: true })]), [], []).state.units[0]!.hp;
+    check("heal at base: a unit hit this round still heals beside its base", hit === 50 + RULES.healPerRound, String(hit));
+  });
+  // A wall between a healer and a wounded ally: no help through it.
+  board("walled-help", (b) => b.pen().edge(6, 6, "w", "wall"));
+  const healedThroughWall = (t: Tuning) =>
+    withTuning(t, () => resolve(stateOn("walled-help", [unit(1, 0, "rifleman", 6, 6, { hp: 50, damaged: true }), unit(2, 0, "healer", 5, 6)]), [], []).state.units[0]!.hp);
+  check("a healer's help doesn't pass through a wall", healedThroughWall(FILE_TUNING) === 50);
+  check("(it did before rules revision 4)", healedThroughWall(rev3) === 50 + RULES.medicHeal);
+  const steadied = (t: Tuning) =>
+    withTuning(t, () => {
+      const m = getMap("walled-help");
+      const shooter = unit(1, 0, "rifleman", 6, 6, { facing: E });
+      const all = [shooter, unit(2, 0, "officer", 5, 6), unit(3, 1, "rifleman", 9, 6, { facing: W })];
+      return previewShot(m, shooter, all[2]!, all).modifiers.some((x) => x.label === "Officer nearby");
+    });
+  check("nor an officer's, through a wall", !steadied(FILE_TUNING) && steadied(rev3));
+  // A riot at the corner of a diagonal shot stands in the way; anyone else there doesn't.
+  board("corner-shot", () => {}, 14, 12);
+  const cornerShot = (kind: UnitKind, t: Tuning = FILE_TUNING) =>
+    withTuning(t, () => {
+      const m = getMap("corner-shot");
+      const shooter = unit(1, 1, "rifleman", 6, 4);
+      shooter.facing = facingToward(shooter, { x: 4, y: 6 });
+      const target = unit(2, 0, "healer", 4, 6);
+      const beside = unit(3, 0, kind, 5, 6); // touches the line at the corner (5,6)
+      return previewShot(m, shooter, target, [shooter, target, beside]).block ?? "clear";
+    });
+  check("a riot at the corner of a diagonal shot is in the way", cornerShot("riot") === "enemy_in_way", cornerShot("riot"));
+  check("any other unit there isn't", cornerShot("rifleman") === "clear", cornerShot("rifleman"));
+  check("(and a riot wasn't before rules revision 4)", cornerShot("riot", rev3) === "clear");
 }
 {
   board("timeout");

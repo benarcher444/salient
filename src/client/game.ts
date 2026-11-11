@@ -4,7 +4,7 @@ import { facingName, facingToward, normFacing, samePoint } from "../game/grid.js
 import { getMap, registerMap } from "../game/maps.js";
 import { replaySteps, type ReplayLog, type ReplayStep } from "../game/replay.js";
 import { useTuning } from "../game/tuning.js";
-import { pathTo } from "../game/movement.js";
+import { pathTo, reachable } from "../game/movement.js";
 import { UNITS, UNIT_KINDS, hasTrait } from "../game/units.js";
 import { RULES } from "../game/constants.js";
 import { healerBeside, nearOwnBase } from "../game/rules.js";
@@ -556,18 +556,40 @@ function setRoute(unit: Unit, to: Point, finalFacing?: Facing): boolean {
  * legs of routes give way, never moves the player chose.
  */
 function untangleLegs() {
-  const mine = s.view?.units.filter((u) => isMine(s, u)) ?? [];
-  for (let changed = true; changed; ) {
+  const v = s.view;
+  const mine = v?.units.filter((u) => isMine(s, u)) ?? [];
+  const taken = (u: Unit, p: Point) =>
+    mine.some((o) => o.id !== u.id && samePoint(plannedEnd(s, o), p)) ||
+    s.draft.spawns.some((sp) => samePoint(sp, p)) ||
+    !!v?.units.some((o) => !isMine(s, o) && samePoint(o, p));
+  // Each fix moves one leg's end to a tile nobody else ends on, so this ends;
+  // the cap is only a guard.
+  for (let pass = 0, changed = true; changed && pass < 50; pass++) {
     changed = false;
     for (const r of s.draft.routes ?? []) {
       const u = unitById(s, r.unitId);
       const m = u && moveOrderFor(s, u.id);
       if (!u || !m || !m.path.length) continue;
       const end = m.path[m.path.length - 1]!;
-      const taken =
-        mine.some((o) => o.id !== u.id && samePoint(plannedEnd(s, o), end)) || s.draft.spawns.some((sp) => samePoint(sp, end));
-      if (!taken) continue;
-      m.path.pop();
+      if (!taken(u, end)) continue;
+      // Rather than stall behind a teammate, step aside: the free tile within
+      // this round's reach that gets nearest the destination (a 2-wide
+      // corridor fills both lanes). If none gets any closer, wait.
+      const toDest = reachable(s.map, { ...u, x: r.to.x, y: r.to.y }, new Set(), Infinity).cost;
+      const reach = reachOf(s, u);
+      const dist = (p: Point) => toDest.get(p.y * s.map.width + p.x) ?? Infinity;
+      let best: Point | null = null;
+      let bestDist = dist(u);
+      for (const idx of reach.cost.keys()) {
+        const p = { x: idx % s.map.width, y: Math.floor(idx / s.map.width) };
+        if (samePoint(p, u) || taken(u, p)) continue;
+        const d = dist(p);
+        if (d < bestDist) {
+          best = p;
+          bestDist = d;
+        }
+      }
+      m.path = best ? (pathTo(s.map, reach, best) ?? []) : [];
       if (m.path.length) m.facing = facingToward(m.path.length > 1 ? m.path[m.path.length - 2]! : u, m.path[m.path.length - 1]!);
       changed = true;
     }
@@ -601,20 +623,24 @@ function continueRoutes(v: PlayerView) {
 type Input = "mouse" | "touch" | "key";
 
 /** A tap on a tile. */
-function onTap(p: Point, input: Input = "key") {
+function onTap(p: Point, input: Input = "key", shift = false) {
   const v = s.view;
   if (!v) return;
   resignAsked = false;
   const u = unitAt(s, p);
-  if (canPlan(s)) planningTap(p, u, input);
+  if (canPlan(s)) planningTap(p, u, input, shift);
   else if (v.phase === "attack" && isMyAttackTurn(s)) attackTap(u);
   else s.selected = u ? { type: "unit", id: u.id } : null;
   refresh();
 }
 
-function planningTap(p: Point, u: Unit | undefined, input: Input) {
+function planningTap(p: Point, u: Unit | undefined, input: Input, shift = false) {
   const sel = s.selected;
   const selUnit = sel?.type === "unit" ? unitById(s, sel.id) : undefined;
+  // Shift+click on a teammate, with one of your units selected, moves the
+  // selected unit onto its square rather than selecting it (the owner's
+  // choice). The teammate must move off before the orders can be locked in.
+  const ontoTeammate = shift && !!selUnit && isMine(s, selUnit) && !!u && isMine(s, u) && u.id !== selUnit.id;
   if (selUnit && isMine(s, selUnit)) {
     const order = moveOrderFor(s, selUnit.id);
     // Tapping the ghost at the end of a route (or a long route's destination)
@@ -637,7 +663,7 @@ function planningTap(p: Point, u: Unit | undefined, input: Input) {
   // selected, clicking it routes the selected unit there (deselect first to
   // pick the teammate itself).
   const leaving = !!u && isMine(s, u) && !!moveOrderFor(s, u.id)?.path.length;
-  if (u && isMine(s, u) && !(selUnit && isMine(s, selUnit) && leaving && u.id !== selUnit.id)) {
+  if (u && isMine(s, u) && !ontoTeammate && !(selUnit && isMine(s, selUnit) && leaving && u.id !== selUnit.id)) {
     s.selected = { type: "unit", id: u.id };
     // With a mouse the unit turns on the spot to follow the pointer straight
     // away: a right click sets that facing (dropping any move or route it
@@ -647,7 +673,7 @@ function planningTap(p: Point, u: Unit | undefined, input: Input) {
     return;
   }
   // A route may also end on an enemy's tile: take it if they leave, stop in front of them if not.
-  if (selUnit && isMine(s, selUnit) && (!u || leaving || !isMine(s, u))) {
+  if (selUnit && isMine(s, selUnit) && (!u || leaving || ontoTeammate || !isMine(s, u))) {
     const reach = reachOf(s, selUnit);
     const path = pathTo(s.map, reach, p);
     if (path && path.length) {
@@ -960,13 +986,15 @@ function siteLine(u: Unit): string {
 function healingLine(u: Unit): string {
   const st = partialState(s);
   const atBase = nearOwnBase(s.map, st, u);
-  const healer = healerBeside(st, u);
+  const healer = healerBeside(st, u, s.map);
+  const ifNotHit = RULES.rulesRevision >= 4 ? "" : " if not hit";
   const zone = RULES.rulesRevision >= 3 ? "your base tiles or a command post you hold" : "your base tiles";
-  if (atBase && healer) return `Heals here: +${RULES.healPerRound + RULES.medicHeal} a round (+${RULES.healPerRound} by ${zone} if not hit, +${RULES.medicHeal} from the healer next to it).`;
-  if (atBase) return `Heals here: +${RULES.healPerRound} a round if not hit.`;
+  if (atBase && healer) return `Heals here: +${RULES.healPerRound + RULES.medicHeal} a round (+${RULES.healPerRound} by ${zone}${ifNotHit}, +${RULES.medicHeal} from the healer next to it).`;
+  if (atBase) return `Heals here: +${RULES.healPerRound} a round${ifNotHit}.`;
   if (healer) return `Heals +${RULES.medicHeal} a round from the healer next to it, even under fire. (+${RULES.healPerRound} more beside ${zone}.)`;
-  if (hasTrait(u.kind, "medic")) return `Not healing: a healer can't heal itself. Bring it beside ${zone}, or next to another healer.`;
-  return `Not healing: units heal only beside ${zone}, or next to a healer.`;
+  const wall = RULES.rulesRevision >= 4 ? " (with no wall or window between)" : "";
+  if (hasTrait(u.kind, "medic")) return `Not healing: a healer can't heal itself. Bring it beside ${zone}, or next to another healer${wall}.`;
+  return `Not healing: units heal only beside ${zone}, or next to a healer${wall}.`;
 }
 
 function showTooltip(tile: Point, sx: number, sy: number) {
@@ -997,7 +1025,7 @@ function cursorTo(p: Point) {
 }
 
 attachGestures(canvas, board.camera, {
-  tap: (sx, sy, button, pointerType) => {
+  tap: (sx, sy, button, pointerType, shift) => {
     const p = board.tileAt(sx, sy);
     const world = board.camera.toWorld(sx, sy);
     // With a mouse: left click moves (and the unit then turns to follow the
@@ -1021,7 +1049,7 @@ attachGestures(canvas, board.camera, {
       // unit), and only a right click sets a facing: put it back first.
       cancelAim();
     }
-    if (p) onTap(p, pointerType === "mouse" ? "mouse" : "touch");
+    if (p) onTap(p, pointerType === "mouse" ? "mouse" : "touch", !!shift);
   },
   hover: onHover,
   changed: () => {

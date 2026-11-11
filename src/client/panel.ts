@@ -81,7 +81,7 @@ export function renderTopBar(s: ClientState) {
   } else gold.hidden = true;
 }
 
-const AIM_HINT = "It turns to follow the pointer: right-click to set its facing there (on a touch screen, tap). Left-click a highlighted tile to move it.";
+const AIM_HINT = "It turns to follow the pointer: right-click to set its facing there (on a touch screen, tap). Left-click a highlighted tile to move it; Shift+click a teammate to move onto its square.";
 
 /** Gold this player gets at the end of each round: the base amount plus its income sites. */
 function incomePerRound(s: ClientState): number {
@@ -238,7 +238,7 @@ function planningBlock(s: ClientState): string {
   <p class="order-line">${what}, facing ${facingName(facing)} (${facing}°).</p>
   ${firedNote}
   <div class="facing-row"><span class="faint small">Face</span>${compass(s, facing)}</div>
-  <p class="faint small">${s.aiming ? AIM_HINT : "Click a highlighted tile to move there, or a tile further off to head there over several rounds; it then turns to follow the pointer. Right-click to set its facing."}</p>
+  <p class="faint small">${s.aiming ? AIM_HINT : "Click a highlighted tile to move there, or a tile further off to head there over several rounds; it then turns to follow the pointer. Shift+click a teammate to move onto its square (it must move off). Right-click to set its facing."}</p>
   ${order || route ? `<div class="order-buttons">${order ? `<button class="btn btn-ghost btn-sm" data-action="clear-order" data-unit="${u.id}" type="button">Clear order</button>` : ""}${route ? `<button class="btn btn-ghost btn-sm" data-action="cancel-route" data-unit="${u.id}" type="button">Cancel route</button>` : ""}</div>` : ""}
 </div>`);
     }

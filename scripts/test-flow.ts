@@ -223,6 +223,25 @@ console.log("\nA route over several rounds\n");
   await tapTile(alex.page, moved.x - 2, moved.y, "right");
   const turned = (await hooks(alex.page, (h) => h.draft()))!.moves.find((m) => m.unitId === walker.id);
   check("clicking a unit then right-clicking turns it on the spot, dropping its move", !!turned && turned.steps === 0 && turned.facing === 270, JSON.stringify(turned));
+  // Shift+click a teammate with a unit selected: the unit is ordered onto its square.
+  const mate = (await hooks(alex.page, (h) => h.myUnits())).find((u) => u.id !== walker.id)!;
+  await tapTile(alex.page, moved.x, moved.y);
+  await alex.page.keyboard.down("Shift");
+  await tapTile(alex.page, mate.x, mate.y);
+  await alex.page.keyboard.up("Shift");
+  const onto = (await hooks(alex.page, (h) => h.draft()))!;
+  const ontoMove = onto.moves.find((m) => m.unitId === walker.id);
+  const ontoRoute = onto.routes.find((r) => r.unitId === walker.id);
+  check(
+    "Shift+click on a teammate orders the selected unit onto its square",
+    (!!ontoMove?.end && ontoMove.end.x === mate.x && ontoMove.end.y === mate.y) || (!!ontoRoute && ontoRoute.to.x === mate.x && ontoRoute.to.y === mate.y),
+    JSON.stringify(onto),
+  );
+  check("and doesn't select the teammate", (await alex.page.textContent("#panel"))?.includes("Moving") ?? false);
+  // Put it back: stop aiming, clear the order, deselect.
+  await alex.page.keyboard.press("Escape");
+  await alex.page.keyboard.press("Delete");
+  await alex.page.keyboard.press("Escape");
 }
 
 console.log("\nMarching until someone has a shot\n");

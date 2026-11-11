@@ -63,12 +63,54 @@ export function inArc(shooter: Pick<Unit, "x" | "y" | "facing" | "kind">, target
   return theta <= UNITS[shooter.kind].arc / 2 + 0.5;
 }
 
-/** Is an officer of the shooter's side (not the shooter) close enough to steady its aim? */
-export function commanded(shooter: Unit, units: readonly Unit[]): boolean {
+/**
+ * Can a healer's or an officer's help reach from one unit to another? Rules
+ * revision 4: only with nothing between them (no wall, window or obstacle):
+ * the owner's call, so help doesn't pass through walls. Before it, range only.
+ */
+export function helpReaches(map: MapDef | null, from: Point, to: Point): boolean {
+  if (RULES.rulesRevision < 4 || !map) return true;
+  const line = traceLine(map, from, to);
+  return line.clear && line.obstacles.length === 0;
+}
+
+/** Is an officer of the shooter's side (not the shooter) close enough, with a clear line, to steady its aim? */
+export function commanded(shooter: Unit, units: readonly Unit[], map: MapDef | null = null): boolean {
   return units.some(
-    (o) => o.id !== shooter.id && o.seat === shooter.seat && hasTrait(o.kind, "command") && chebyshev(o, shooter) <= RULES.traits.commandRange,
+    (o) =>
+      o.id !== shooter.id &&
+      o.seat === shooter.seat &&
+      hasTrait(o.kind, "command") &&
+      chebyshev(o, shooter) <= RULES.traits.commandRange &&
+      helpReaches(map, o, shooter),
   );
 }
+
+/**
+ * Where on a shot's line a unit is in the way, nearest the shooter first:
+ * every tile the line crosses, and (rules revision 4) where the line passes
+ * exactly through a tile corner, the two tiles either side of it, at which
+ * only a shield bearer stands in the way (`cornerOnly`). The owner's call: a
+ * riot beside a diagonal shot shields what is behind it.
+ */
+export function lineSpots(shooter: Point, target: Point, tiles: readonly Point[]): { p: Point; cornerOnly: boolean }[] {
+  const spots: { p: Point; cornerOnly: boolean }[] = [];
+  const path = [shooter, ...tiles, target];
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1]!;
+    const b = path[i]!;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    if (RULES.rulesRevision >= 4 && dx !== 0 && dy !== 0) {
+      spots.push({ p: { x: a.x + dx, y: a.y }, cornerOnly: true }, { p: { x: a.x, y: a.y + dy }, cornerOnly: true });
+    }
+    if (i < path.length - 1) spots.push({ p: b, cornerOnly: false });
+  }
+  return spots;
+}
+
+/** Does this unit, standing at this spot of a shot's line, stop the shot? */
+export const blocksAt = (u: Pick<Unit, "kind">, spot: { cornerOnly: boolean }) => !spot.cornerOnly || hasTrait(u.kind, "shield");
 
 /**
  * Everything about a shot short of rolling the dice. Visibility (can this
@@ -91,8 +133,9 @@ export function previewShot(map: MapDef, shooter: Unit, target: Unit, units: rea
   if (!inArc(shooter, target)) return { ...base, block: "outside_arc" };
   const line = traceLine(map, shooter, target);
   if (!line.clear) return { ...base, block: "no_line_of_sight" };
+  const spots = lineSpots(shooter, target, line.tiles);
   const inTheWay = units.some(
-    (u) => u.seat !== shooter.seat && u.id !== target.id && line.tiles.some((p) => p.x === u.x && p.y === u.y),
+    (u) => u.seat !== shooter.seat && u.id !== target.id && spots.some((s) => s.p.x === u.x && s.p.y === u.y && blocksAt(u, s)),
   );
   if (inTheWay) return { ...base, block: "enemy_in_way" };
 
@@ -109,7 +152,7 @@ export function previewShot(map: MapDef, shooter: Unit, target: Unit, units: rea
     modifiers.push({ label: `Too close for the scope (${d.toFixed(1)} tiles)`, factor });
   }
   if (hasTrait(shooter.kind, "steady") && shooter.moved) modifiers.push({ label: "Moved this round: not braced", factor: t.steadyPenalty });
-  const officer = commanded(shooter, units);
+  const officer = commanded(shooter, units, map);
   if (officer) modifiers.push({ label: "Officer nearby", factor: t.commandAccuracy });
 
   // Cover: something right next to the target, on the shooter's side of the

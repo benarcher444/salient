@@ -3,7 +3,7 @@
 // way the state changes, and it is deterministic given the roll function, so
 // a game is fully described by its seed and its list of actions.
 import { RULES } from "./constants.js";
-import { blastTiles, commanded, damageFor, flankOf, previewShot, rollShot, shieldFactor } from "./combat.js";
+import { blastTiles, blocksAt, commanded, damageFor, flankOf, helpReaches, lineSpots, previewShot, rollShot, shieldFactor } from "./combat.js";
 import { facingToward, inBounds, samePoint } from "./grid.js";
 import { getMap } from "./maps.js";
 import { validatePath } from "./movement.js";
@@ -397,10 +397,15 @@ export function nearOwnBase(
   return RULES.rulesRevision >= 3 && map.posts.some((p, i) => state.postOwners[i] === u.seat && near(p));
 }
 
-/** Is a healer of its own side next to it (not itself)? Its help works anywhere. */
-export function healerBeside(state: Pick<GameState, "units">, u: Pick<Unit, "id" | "x" | "y" | "seat">): boolean {
+/** Is a healer of its own side next to it (not itself), with nothing between (rules revision 4)? */
+export function healerBeside(state: Pick<GameState, "units">, u: Pick<Unit, "id" | "x" | "y" | "seat">, map: MapDef | null = null): boolean {
   return state.units.some(
-    (m) => m.id !== u.id && m.seat === u.seat && hasTrait(m.kind, "medic") && Math.max(Math.abs(m.x - u.x), Math.abs(m.y - u.y)) <= RULES.medicRange,
+    (m) =>
+      m.id !== u.id &&
+      m.seat === u.seat &&
+      hasTrait(m.kind, "medic") &&
+      Math.max(Math.abs(m.x - u.x), Math.abs(m.y - u.y)) <= RULES.medicRange &&
+      helpReaches(map, m, u),
   );
 }
 
@@ -499,8 +504,8 @@ function attack(
   // shot instead: the nearest such one. Otherwise hiding a unit would let
   // shots pass through it.
   const line = traceLine(map, shooter, aimedAt);
-  const hidden = line.tiles
-    .map((p) => state.units.find((u) => u.x === p.x && u.y === p.y && u.seat !== seat && !known.includes(u)))
+  const hidden = lineSpots(shooter, aimedAt, line.tiles)
+    .map((s) => state.units.find((u) => u.x === s.p.x && u.y === s.p.y && u.seat !== seat && !known.includes(u) && blocksAt(u, s)))
     .find((u): u is Unit => !!u);
   const target = hidden ?? aimedAt;
   // The shot is rolled against what it strikes. A hidden unit is often
@@ -520,7 +525,7 @@ function attack(
       flank,
       fatal: false,
       chance: Math.max(RULES.minHitChance / 100, Math.round(aimed.chance * shield * 100) / 100),
-      damage: damageFor(shooter, hidden, flank, commanded(shooter, known)),
+      damage: damageFor(shooter, hidden, flank, commanded(shooter, known, map)),
     };
   }
   const result = rollShot(preview, roll(), roll());
@@ -658,8 +663,11 @@ function endRound(map: MapDef, state: GameState, events: GameEvent[]) {
   // ordinary healing only on or beside your side's base tiles.
   for (const u of state.units) {
     const max = UNITS[u.kind].hp;
-    let heal = u.damaged || (RULES.healOnlyNearBase && !nearOwnBase(map, state, u)) ? 0 : RULES.healPerRound;
-    if (healerBeside(state, u)) heal += RULES.medicHeal;
+    // Under heal-at-base, the base heals even a unit hit this round (rules
+    // revision 4, the owner's call); otherwise a unit hit this round doesn't heal.
+    const ordinary = RULES.healOnlyNearBase ? nearOwnBase(map, state, u) && (!u.damaged || RULES.rulesRevision >= 4) : !u.damaged;
+    let heal = ordinary ? RULES.healPerRound : 0;
+    if (healerBeside(state, u, map)) heal += RULES.medicHeal;
     u.hp = Math.min(max, u.hp + heal);
   }
 

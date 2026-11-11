@@ -159,6 +159,22 @@ and cancels its move and route, so a unit on a route can just be turned
 round; Esc or a left click elsewhere puts its orders back. Clear order and
 Cancel route end such an aim, so it can't restore what they removed.
 
+**Rules revision 4 (the owner's calls, 2026-11-11).** A healer's and an
+officer's help needs a clear line with nothing between (`helpReaches`: no
+wall, window or obstacle), not just range. A shield bearer standing at the
+corner of a diagonal shot (the line passing exactly through a tile corner)
+is in the way, any other unit there isn't (`lineSpots`/`blocksAt` in
+`combat.ts`, used by `previewShot` and the hidden-blocker rule): the owner
+watched a shot slip diagonally past a riot's corner to the healer behind it.
+Under heal-at-base, a unit heals beside its base even when hit that round.
+
+**Moving onto a teammate's square: Shift+click.** With a unit selected, a
+plain click on a teammate selects it; Shift+click orders the selected unit
+onto its square (the owner's choice), and the teammate must move off before
+the orders lock in. A route's leg whose end another of your units will hold
+steps aside to the free tile in reach nearest the destination
+(`untangleLegs`), where it used to shrink, often to nothing, in a corridor.
+
 **Enemies block shots; your own side doesn't.** `traceLine` returns the tiles
 a line passes through, and `previewShot` refuses a shot (`enemy_in_way`)
 when an enemy stands on one. Only enemies the shooter's side can see count
