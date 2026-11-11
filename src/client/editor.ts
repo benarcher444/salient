@@ -559,7 +559,7 @@ function showTooltip(sp: { x: number; y: number }, w: { x: number; y: number }) 
   }
   const ground = TERRAIN[map.terrain[t.y * map.width + t.x]!].label;
   const base = map.bases.findIndex((tiles) => tiles.some((q) => same(q, t)));
-  const site = base >= 0 ? `${seatName(base)} base` : map.posts.some((q) => same(q, t)) ? "Command post" : map.income.some((q) => same(q, t)) ? "Income site" : "";
+  const site = base >= 0 ? `${seatName(base)} base` : map.posts.some((q) => same(q, t)) ? "Command post" : map.income.some((q) => same(q, t)) ? "Supply depot" : "";
   tooltip.innerHTML = `<strong>${t.x + 1}, ${t.y + 1}</strong><span>${ground}${site ? ` · ${site}` : ""}</span>`;
   tooltip.style.left = `${sp.x + 14}px`;
   tooltip.style.top = `${sp.y + 14}px`;

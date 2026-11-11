@@ -193,7 +193,7 @@ export function rulesPage(user: User | null): Html {
       <li><strong>Move, then deploy.</strong> Moves resolve first, then new units land: a deployment onto a tile someone has just walked onto fails, and its gold comes back.</li>
       <li><strong>Move.</strong> When the last player locks in, all routes play out together, one step at a time. Your own units walk through each other freely, but no two can finish on the same tile. Units of different sides heading for the same tile both stop, and so does anyone who walks into an enemy they couldn't see.</li>
       <li><strong>Attack.</strong> Players take turns firing one unit at a time (a commando takes both its shots in its turn). A unit that fires can't move in the next round, only turn. The first shot rotates each round. Units with nothing in reach are skipped automatically.</li>
-      <li><strong>Upkeep.</strong> Captures (base tiles, posts, income sites), income and healing. Anyone left with no base tiles and no units is knocked out.</li>
+      <li><strong>Upkeep.</strong> Captures (base tiles, posts, supply depots), income and healing. Anyone left with no base tiles and no units is knocked out.</li>
     </ol>
     <h2>Shooting</h2>
     <p>A unit can shoot what is inside its <strong>firing arc</strong> (the wedge in front of it), within range, with a clear line: walls stop shots, and so does any enemy standing in the way. Your own units don't: you shoot past them. An enemy you can't see (a hidden commando, someone in the fog mid-way along a long shot) takes the shot instead of your target. You see the chance to hit before you fire. Accuracy falls off past a unit's best range. A target behind cover — a crate, a low wall or window, or standing in woods — is harder to hit; cover right next to the shooter costs nothing.</p>
@@ -203,9 +203,10 @@ export function rulesPage(user: User | null): Html {
     <ul>
       <li><strong>Walls</strong> stop movement and sight. <strong>Windows and low walls</strong> stop movement but you can see and shoot through them. Doorways are open.</li>
       <li><strong>Rock</strong> blocks both; <strong>water</strong> and <strong>crates</strong> block movement only; <strong>woods</strong> cost double to walk through and give cover.</li>
-      <li><strong>Command posts</strong> are captured by ending a round on them: an enemy's becomes neutral, a neutral one becomes yours. You can deploy on a post you hold (on the post's own tile only). Posts are forward spawn points; they don't keep you in the game on their own.</li>
+      <li><strong>Command posts</strong> are captured by holding them: ${RULES.baseCaptureRounds} rounds on one turns an enemy's neutral, and ${RULES.baseCaptureRounds} more make a neutral one yours (an <strong>engineer</strong> needs ${RULES.engineerBaseCaptureRounds === 1 ? "one round" : `${RULES.engineerBaseCaptureRounds} rounds`} a step). Leave it and the progress is lost. You can deploy on a post you hold (on the post's own tile only). Posts are forward spawn points; they don't keep you in the game on their own.</li>
       <li><strong>Base tiles</strong> are captured the same way, one tile at a time, and become spawn points for whoever holds them. A unit standing on its own base tile blocks the capture.</li>
-      <li><strong>Income sites</strong> pay +25 gold a round, on top of everyone's +${RULES.baseIncome}. Only <strong>engineers</strong> can capture them.</li>
+      <li><strong>Supply depots</strong> pay +25 gold a round, on top of everyone's +${RULES.baseIncome}. Only <strong>engineers</strong> can capture them, one step a round.</li>
+      <li>A unit standing on a post, depot or base tile shows a <strong>badge</strong> in the tile's corner in the colour of whoever holds it now (dashed grey: nobody), with dots for the rounds of a capture held so far. Hover over the unit for what happens next.</li>
       <li><strong>Fog of war:</strong> you only see what your units and the base tiles and posts you hold can see.</li>
     </ul>
     <h2>Playing the computer</h2>

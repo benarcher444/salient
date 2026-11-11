@@ -153,6 +153,11 @@ export interface GameState {
    * baseCaptureRounds rounds (an engineer's, engineerBaseCaptureRounds).
    */
   baseCapture: ({ seat: Seat; rounds: number } | null)[];
+  /**
+   * The same for command posts, by index into map.posts (rules revision 2:
+   * a post takes as long as a base tile). Missing in states from before it.
+   */
+  postCapture?: ({ seat: Seat; rounds: number } | null)[];
   /** Planning phase: each seat's submitted orders, or null while still planning. */
   orders: (Orders | null)[];
   /**
@@ -209,7 +214,7 @@ export type GameEvent =
     }
   | { type: "hold"; unitId: number; seat: Seat }
   | { type: "capture"; site: "post" | "income" | "base"; index: number; from: Seat | null; to: Seat | null }
-  | { type: "captureProgress"; site: "base"; index: number; seat: Seat; rounds: number; needed: number }
+  | { type: "captureProgress"; site: "base" | "post"; index: number; seat: Seat; rounds: number; needed: number }
   | { type: "income"; seat: Seat; amount: number }
   | { type: "eliminated"; seat: Seat }
   | { type: "round"; round: number }

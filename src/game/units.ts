@@ -19,8 +19,8 @@ export function traitText(trait: Trait): string {
       return "Carries no weapon.";
     case "engineer":
       return RULES.engineerBaseCaptureRounds < RULES.baseCaptureRounds
-        ? `Captures income sites, and base tiles in ${RULES.engineerBaseCaptureRounds === 1 ? "one round" : `${RULES.engineerBaseCaptureRounds} rounds`} a step.`
-        : "Captures income sites.";
+        ? `The only unit that captures supply depots. Takes base tiles and command posts in ${RULES.engineerBaseCaptureRounds === 1 ? "one round" : `${RULES.engineerBaseCaptureRounds} rounds`} a step.`
+        : "The only unit that captures supply depots.";
     case "medic":
       return `${RULES.medicRange === 1 ? "Allies next to it (diagonals too)" : `Allies within ${RULES.medicRange} tiles`} heal +${RULES.medicHeal} more at round end, even under fire.`;
     case "command":

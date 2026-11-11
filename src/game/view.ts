@@ -40,6 +40,8 @@ export interface PlayerView {
   baseOwners: (Seat | null)[];
   /** Base tiles part way through a capture step, by the same index. Public: you can see who stands on your base. */
   baseCapture: ({ seat: Seat; rounds: number } | null)[];
+  /** Command posts part way through a capture step, by index into map.posts. Public, like posts. */
+  postCapture: ({ seat: Seat; rounds: number } | null)[];
   /** The viewer's own submitted orders this round, if any. */
   myOrders: Orders | null;
   /**
@@ -86,6 +88,7 @@ export function viewFor(state: GameState, seat: Seat | null): PlayerView {
     incomeOwners: [...state.incomeOwners],
     baseOwners: [...state.baseOwners],
     baseCapture: structuredClone(state.baseCapture),
+    postCapture: structuredClone(state.postCapture ?? []),
     myOrders: seat === null ? null : structuredClone(state.orders[seat] ?? null),
     myRoutes:
       seat === null || over
@@ -159,6 +162,7 @@ export function stateFromView(v: PlayerView): GameState {
     incomeOwners: v.incomeOwners,
     baseOwners: v.baseOwners,
     baseCapture: v.baseCapture,
+    postCapture: v.postCapture,
     orders: v.seats.map(() => null),
     routes: v.seats.map((p) => (p.seat === v.seat ? (v.myRoutes ?? []) : [])),
     attackTurn: v.attackTurn,

@@ -464,6 +464,10 @@ function logEvent(e: GameEvent, round: number) {
       break;
     case "captureProgress": {
       const left = e.needed - e.rounds;
+      if (e.site === "post") {
+        html = `${who(e.seat)} ${e.seat === seat ? "are" : "is"} taking a command post: ${left} more round${left === 1 ? "" : "s"} there and it changes hands.`;
+        break;
+      }
       const home = baseTiles(s.map, s.view?.seats.length ?? 2)[e.index]?.home;
       const whose = home === seat ? "your" : home === e.seat ? "their own" : `${who(home ?? 0)}'s`;
       html = `${who(e.seat)} ${e.seat === seat ? "are" : "is"} taking ${whose} base tile: ${left} more round${left === 1 ? "" : "s"} there and it changes hands.`;
@@ -485,7 +489,7 @@ function logEvent(e: GameEvent, round: number) {
 
 /** A capture, in words. Base tiles say whose base they belong to. */
 function captureLine(e: Extract<GameEvent, { type: "capture" }>, who: (p: number | null) => string): string {
-  let what = e.site === "post" ? "a command post" : "an income site";
+  let what = e.site === "post" ? "a command post" : "a supply depot";
   if (e.site === "base") {
     const home = baseTiles(s.map, s.view?.seats.length ?? 0)[e.index]?.home;
     what = home === undefined ? "a base tile" : home === mySeat(s) ? "a tile of your base" : `a tile of ${playerName(s, home)}'s base`;
@@ -922,25 +926,27 @@ function siteLine(u: Unit): string {
   if (!v) return "";
   const whose = (o: number | null) => (o === null ? "neutral" : o === v.seat ? "yours" : `${esc(playerName(s, o))}'s`);
   const next = (o: number | null) => (o === null ? `${u.seat === v.seat ? "yours" : `${esc(playerName(s, u.seat))}'s`}` : "neutral");
+  // Rounds still to hold a tile for this step (posts: one round a step before rules revision 2).
+  const left = (taking: { seat: number; rounds: number } | null | undefined) =>
+    (hasTrait(u.kind, "engineer") ? RULES.engineerBaseCaptureRounds : RULES.baseCaptureRounds) - (taking?.seat === u.seat ? taking.rounds : 0);
+  const after = (n: number) => (n <= 1 ? "at the end of the round" : `after ${n} more rounds here`);
   const post = s.map.posts.findIndex((p) => samePoint(p, u));
   if (post >= 0) {
     const o = v.postOwners[post] ?? null;
-    return o === u.seat ? `On a command post: ${whose(o)}.` : `On a command post (${whose(o)}): ${next(o)} at the end of the round.`;
+    if (o === u.seat) return `On a command post: ${whose(o)}.`;
+    return `On a command post (${whose(o)}): ${next(o)} ${after(RULES.rulesRevision >= 2 ? left(v.postCapture?.[post]) : 1)}.`;
   }
   const inc = s.map.income.findIndex((p) => samePoint(p, u));
   if (inc >= 0) {
     const o = v.incomeOwners[inc] ?? null;
-    if (o === u.seat) return `On an income site: ${whose(o)}.`;
-    return hasTrait(u.kind, "engineer") ? `On an income site (${whose(o)}): ${next(o)} at the end of the round.` : `On an income site (${whose(o)}): only an engineer can take it.`;
+    if (o === u.seat) return `On a supply depot: ${whose(o)}.`;
+    return hasTrait(u.kind, "engineer") ? `On a supply depot (${whose(o)}): ${next(o)} at the end of the round.` : `On a supply depot (${whose(o)}): only an engineer can take it.`;
   }
   const bi = baseTiles(s.map, v.seats.length).findIndex((t) => samePoint(t, u));
   if (bi >= 0) {
     const o = v.baseOwners[bi] ?? null;
     if (o === u.seat) return `On a base tile: ${whose(o)}.`;
-    const need = hasTrait(u.kind, "engineer") ? RULES.engineerBaseCaptureRounds : RULES.baseCaptureRounds;
-    const held = v.baseCapture?.[bi]?.seat === u.seat ? v.baseCapture[bi]!.rounds : 0;
-    const left = need - held;
-    return `On a base tile (${whose(o)}): ${next(o)} after ${left} more round${left === 1 ? "" : "s"} here.`;
+    return `On a base tile (${whose(o)}): ${next(o)} ${after(left(v.baseCapture?.[bi]))}.`;
   }
   return "";
 }

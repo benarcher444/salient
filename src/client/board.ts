@@ -435,16 +435,8 @@ export class Board {
       }
       g.restore();
     };
-    map.posts.forEach((p, i) => {
-      if (occupied(p)) badge(p, v.postOwners[i] ?? null, "post");
-    });
-    map.income.forEach((p, i) => {
-      if (occupied(p)) badge(p, v.incomeOwners[i] ?? null, "income");
-    });
-    baseTiles(map, v.seats.length).forEach((t, i) => {
-      if (!occupied(t)) return;
-      badge(t, v.baseOwners[i] ?? null, "base");
-      const taking = v.baseCapture?.[i];
+    // A capture step under way: one pip per round held, in the taker's colour.
+    const pips = (t: Point, taking: { seat: number; rounds: number } | null) => {
       if (!taking) return;
       const need = RULES.baseCaptureRounds;
       const c = this.pal.seats[taking.seat]!;
@@ -453,10 +445,23 @@ export class Board {
         g.strokeStyle = alpha(colourHex(this.pal.ink), 0.7);
         g.lineWidth = 0.02;
         g.beginPath();
-        g.arc(t.x + 0.8 - (need - 1 - k) * 0.12, t.y + 0.45, 0.045, 0, Math.PI * 2);
+        g.arc(t.x + 0.84 - (need - 1 - k) * 0.12, t.y + 0.47, 0.045, 0, Math.PI * 2);
         g.fill();
         g.stroke();
       }
+    };
+    map.posts.forEach((p, i) => {
+      if (!occupied(p)) return;
+      badge(p, v.postOwners[i] ?? null, "post");
+      pips(p, v.postCapture?.[i] ?? null);
+    });
+    map.income.forEach((p, i) => {
+      if (occupied(p)) badge(p, v.incomeOwners[i] ?? null, "income");
+    });
+    baseTiles(map, v.seats.length).forEach((t, i) => {
+      if (!occupied(t)) return;
+      badge(t, v.baseOwners[i] ?? null, "base");
+      pips(t, v.baseCapture?.[i] ?? null);
     });
   }
 

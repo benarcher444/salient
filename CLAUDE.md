@@ -333,6 +333,14 @@ glide. Replays don't do it. A unit killed flashes, spins and shrinks as it
 falls (`DEATH_MS`), a "Down" label shows under it, and a scorch mark with a
 cross in its side's colour stays on the tile for `REMAINS_MS`.
 
+**Command posts take as long as base tiles; income sites are "supply
+depots" to players.** The owner's calls (2026-11-11): a post takes
+`baseCaptureRounds` a step, an engineer's `engineerBaseCaptureRounds`, kept
+in `state.postCapture` like `baseCapture` (rules revision 2: older games
+still take a post in one round). Supply depots stay engineer-only, a step a
+round. Code keeps "income" (`incomeOwners`, `map.income`); everything a
+player reads says supply depot.
+
 **A unit standing on a site shows whose it is.** The unit covers the tile's
 own colours, so `drawSiteBadges` puts a badge on the tile's corner, over the
 unit: the owner's colour (dashed grey when neutral) with the site's sign

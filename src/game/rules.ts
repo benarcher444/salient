@@ -44,6 +44,7 @@ export function newGame(mapId: string, seatCount: number): GameState {
     incomeOwners: map.income.map(() => null),
     baseOwners: baseTiles(map, seatCount).map((t) => t.home),
     baseCapture: baseTiles(map, seatCount).map(() => null),
+    postCapture: map.posts.map(() => null),
     orders: Array.from({ length: seatCount }, () => null),
     routes: Array.from({ length: seatCount }, () => []),
     attackTurn: null,
@@ -564,9 +565,11 @@ function endRound(map: MapDef, state: GameState, events: GameEvent[]) {
   // Captures. A unit standing on a site its side does not own takes it one
   // step towards its side: an enemy's becomes neutral, a neutral one becomes
   // theirs. One unit per tile, so a capturer is always alone on the tile, and
-  // a defender standing on it blocks it. Posts take one round a step; income
-  // sites need an engineer; base tiles take baseCaptureRounds a step (an
-  // engineer's, engineerBaseCaptureRounds), held by the same side throughout.
+  // a defender standing on it blocks it. Supply depots (income sites) need an
+  // engineer and take one round a step; base tiles and (rules revision 2)
+  // command posts take baseCaptureRounds a step, an engineer's
+  // engineerBaseCaptureRounds, held by the same side throughout. Before
+  // revision 2 a post took one round a step.
   const capture = (site: "post" | "income" | "base", owners: (Seat | null)[], i: number, p: Point, engineersOnly = false) => {
     const u = unitAt(p);
     if (!u || (engineersOnly && !hasTrait(u.kind, "engineer"))) return;
@@ -576,26 +579,31 @@ function endRound(map: MapDef, state: GameState, events: GameEvent[]) {
     owners[i] = next;
     events.push({ type: "capture", site, index: i, from: owner, to: next });
   };
-  map.posts.forEach((p, i) => capture("post", state.postOwners, i, p));
-  map.income.forEach((p, i) => capture("income", state.incomeOwners, i, p, true));
-  baseTiles(map, state.seatCount).forEach((p, i) => {
+  // A step held over several rounds: progress is kept per tile, and lost
+  // when the tile is left (or its owner stands on it).
+  const slowly = (site: "base" | "post", owners: (Seat | null)[], progress: ({ seat: Seat; rounds: number } | null)[], i: number, p: Point) => {
     const u = unitAt(p);
-    if (!u || state.baseOwners[i] === u.seat) {
-      // Nobody taking it (or its owner standing on it): progress is lost.
-      state.baseCapture[i] = null;
+    if (!u || owners[i] === u.seat) {
+      progress[i] = null;
       return;
     }
     const needed = hasTrait(u.kind, "engineer") ? RULES.engineerBaseCaptureRounds : RULES.baseCaptureRounds;
-    const before = state.baseCapture[i];
+    const before = progress[i];
     const rounds = before && before.seat === u.seat ? before.rounds + 1 : 1;
     if (rounds >= needed) {
-      state.baseCapture[i] = null;
-      capture("base", state.baseOwners, i, p);
+      progress[i] = null;
+      capture(site, owners, i, p);
     } else {
-      state.baseCapture[i] = { seat: u.seat, rounds };
-      events.push({ type: "captureProgress", site: "base", index: i, seat: u.seat, rounds, needed });
+      progress[i] = { seat: u.seat, rounds };
+      events.push({ type: "captureProgress", site, index: i, seat: u.seat, rounds, needed });
     }
-  });
+  };
+  if (RULES.rulesRevision >= 2) {
+    state.postCapture ??= map.posts.map(() => null);
+    map.posts.forEach((p, i) => slowly("post", state.postOwners, state.postCapture!, i, p));
+  } else map.posts.forEach((p, i) => capture("post", state.postOwners, i, p));
+  map.income.forEach((p, i) => capture("income", state.incomeOwners, i, p, true));
+  baseTiles(map, state.seatCount).forEach((p, i) => slowly("base", state.baseOwners, state.baseCapture, i, p));
 
   for (const s of state.seats) {
     if (s.eliminated) continue;

@@ -68,7 +68,7 @@ export function renderTopBar(s: ClientState) {
     gold.hidden = false;
     const left = canPlan(s) ? goldLeft(s) : v.gold;
     const income = incomePerRound(s);
-    const label = `${left} gold; +${income} at the end of every round (${RULES.baseIncome} base${income > RULES.baseIncome ? `, ${income - RULES.baseIncome} from income sites` : ""})`;
+    const label = `${left} gold; +${income} at the end of every round (${RULES.baseIncome} base${income > RULES.baseIncome ? `, ${income - RULES.baseIncome} from supply depots` : ""})`;
     gold.title = label;
     gold.setAttribute("aria-label", label);
     gold.innerHTML = `<span class="coin"></span><strong>${left}</strong><span class="faint">gold</span><span class="income-chip">+${income}<span class="faint">/round</span></span>`;

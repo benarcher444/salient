@@ -798,8 +798,21 @@ section("Upkeep: captures, income, healing");
     b.pen().income(8, 8, 25);
   });
   let s = stateOn("sites", [unit(1, 0, "rifleman", 5, 5), unit(2, 0, "rifleman", 8, 8)]);
+  const firstRound = resolve(s, [], []);
+  s = firstRound.state;
+  check("a post takes baseCaptureRounds a step, like a base tile", RULES.baseCaptureRounds === 2 && s.postOwners[0] === null && s.postCapture?.[0]?.rounds === 1);
+  check("and the log hears of it", firstRound.events.some((e) => e.type === "captureProgress" && e.site === "post" && e.needed === RULES.baseCaptureRounds));
+  const left = resolve({ ...s, units: s.units.filter((u) => u.id !== 1) }, [], []).state;
+  check("leaving the post loses the progress", left.postCapture?.[0] === null && left.postOwners[0] === null);
+  {
+    // A game created before rules revision 2: one round a step, as it was played.
+    const { rulesRevision: _, ...oldRules } = FILE_TUNING.rules;
+    const old = upgradeSnapshot({ version: 2, rules: { ...oldRules, rulesRevision: 1 }, units: FILE_TUNING.units as unknown as Record<string, unknown> });
+    const quick = withTuning(old, () => resolve(stateOn("sites", [unit(1, 0, "rifleman", 5, 5)]), [], []).state);
+    check("games from before revision 2 still take a post in one round", quick.postOwners[0] === 0);
+  }
   s = resolve(s, [], []).state;
-  check("standing on a neutral post takes it", s.postOwners[0] === 0);
+  check("standing on a neutral post takes it after that", s.postOwners[0] === 0);
   check("only engineers take income sites", s.incomeOwners[0] === null);
   check("holding more posts costs the other side nothing by itself (no tickets)", !s.seats[1]!.eliminated && !("tickets" in s.seats[1]!));
 
@@ -807,7 +820,7 @@ section("Upkeep: captures, income, healing");
   s = resolve(s, [], []).state;
   check("an enemy on your post makes it neutral first", s.postOwners[0] === null);
   check("an engineer takes the income site", s.incomeOwners[0] === 1);
-  check("which pays out the same round", s.seats[1]!.gold === RULES.startGold + 2 * RULES.baseIncome + 25, `${s.seats[1]!.gold}`);
+  check("which pays out the same round", s.seats[1]!.gold === RULES.startGold + 3 * RULES.baseIncome + 25, `${s.seats[1]!.gold}`);
   s = resolve(s, [], []).state;
   check("a second round flips the post to them", s.postOwners[0] === 1);
   const mine = spawnTiles(getMap("sites"), s, 1);

@@ -1,6 +1,6 @@
 {
   "name": "Engineer",
-  "role": "Unarmed. The only unit that can take income sites.",
+  "role": "Unarmed. The only unit that can take supply depots, and quick to take posts and bases.",
   "cost": 80,
   "hp": 90,
   "move": 3,

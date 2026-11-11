@@ -3,7 +3,7 @@
 A turn-based tactics game for two to four players, in the browser.
 
 Buy units onto your base. Capture command posts to deploy further forward,
-and income sites to pay for more. Plan your moves in secret while everyone
+and supply depots to pay for more. Plan your moves in secret while everyone
 else does the same; watch them play out together; then trade shots one unit
 at a time. Fog of war hides everything your units can't see. Facing matters:
 hit someone from the side or behind and it hurts more.
@@ -21,7 +21,7 @@ battlefields in the map editor and play them straight away.
 - **A round:** everyone **plans** at once (deploy units, give each a route and
   a facing) → everything **moves** together, step by step → players take turns
   **firing** one unit at a time → **upkeep**: captures, income, healing.
-- **Ten unit classes:** rifleman, engineer (unarmed, takes income sites),
+- **Ten unit classes:** rifleman, engineer (unarmed, takes supply depots),
   scout, shotgun, riot shield (unarmed), sniper, commando, heavy (explosives),
   healer and officer, each with its own cost, range, firing arc and traits.
 - **Facing is free:** a unit can point any direction, and which side a shot

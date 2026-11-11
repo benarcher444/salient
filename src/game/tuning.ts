@@ -265,8 +265,10 @@ export const TUNING_VERSION = 2;
  * log differently, and gate the fix on `RULES.rulesRevision >= n`.
  *   1: a wall meeting a window at a corner blocks a line through it; a shot
  *      striking an unseen unit keeps the chance it was fired with.
+ *   2: a command post takes as long to capture as a base tile (two rounds a
+ *      step, an engineer's one), not one round a step.
  */
-export const RULES_REVISION = 1;
+export const RULES_REVISION = 2;
 
 /** Validate tuning data (from the files, or a game's stored snapshot). Throws TuningError naming the file and field. */
 export function checkTuning(raw: { rules: unknown; units: Record<string, unknown> }): Tuning {

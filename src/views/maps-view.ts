@@ -118,8 +118,8 @@ export function editorPage(user: User, entry: MapEntry): Html {
         <div class="tools">
           ${tool("base", "Base", "sw-base", "Where a seat deploys. Pick the seat below")}
           ${tool("post", "Command post", "sw-post", "Captured posts become forward spawn points")}
-          ${tool("income", "Income site", "sw-income", "+25 gold a round to whoever holds it. Engineers capture these")}
-          ${tool("clear-site", "Clear site", "sw-clear", "Remove bases, posts and income sites")}
+          ${tool("income", "Supply depot", "sw-income", "+25 gold a round to whoever holds it. Only engineers capture these")}
+          ${tool("clear-site", "Clear site", "sw-clear", "Remove bases, posts and supply depots")}
         </div>
         <div class="seat-picks" id="seat-picks" role="group" aria-label="Base belongs to">${seatChoices}</div>
       </section>
