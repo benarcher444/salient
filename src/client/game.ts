@@ -413,9 +413,9 @@ function announce(before: PlayerView | null, v: PlayerView) {
   // describes the current state before showing.
   const delay = Math.max(0, board.anim.busyUntil - performance.now());
   const stillCurrent = () => s.view === v;
-  if (isMyAttackTurn(s) && !(before.phase === "attack" && before.attackTurn === seat)) {
-    window.setTimeout(() => stillCurrent() && showBanner("Your shot", "Pick a unit, then a target", "turn"), delay);
-  } else if (v.round !== before.round && v.phase === "planning") {
+  // No banner for your attack turn (the owner found it always in the way):
+  // the panel's heading and the scoreboard say whose shot it is.
+  if (v.round !== before.round && v.phase === "planning") {
     window.setTimeout(() => stillCurrent() && showBanner(`Round ${v.round}`, "Plan your moves"), delay);
   }
 }
