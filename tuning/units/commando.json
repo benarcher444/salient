@@ -3,7 +3,7 @@
   "role": "Unseen until close. Two shots a turn, fatal from behind.",
   "cost": 120,
   "hp": 80,
-  "move": 3,
+  "move": 4,
   "sight": 8,
   "range": 4,
   "optimal": 2,

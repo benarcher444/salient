@@ -30,7 +30,7 @@
     "shieldFrontHit": 0.35,
     "backstabMultiplier": 2.5,
     "backstabFatalRange": 1,
-    "stealthRange": 3,
+    "stealthRange": 2,
     "steadyPenalty": 0.5,
     "scopedCloseAccuracy": 0.3,
     "scopeSight": 20,
