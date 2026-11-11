@@ -40,6 +40,8 @@ None of its code did.
 | `npm run typecheck` | `tsc` over `src/` and `scripts/` |
 | `npm test` | The rules engine, exhaustively (no server, no browser) |
 | `npx tsx scripts/simulate.ts` | Bots against bots, many games in memory: smoke test and balance report (`--levels=veteran,regular` pits levels against each other) |
+| `npx tsx scripts/balance.ts --mode=squad` | Class balance at equal gold: skirmishes of 8 riflemen + 2 of a class against 8 + the same gold in riflemen (`mixed`, `pure` too; `--only=`, `--tuning=file` to try numbers). One class per process: run 3 at once at most |
+| `npx tsx scripts/class-stats.ts` | Per class over whole bot games: damage and kills per 100 gold, hit rate, lifetime, healing |
 | `npm run test:flow` | Two real browsers play a game, then one plays the computer (server running, seeded) |
 | `npm run test:editor` | The map editor in a real browser: symmetry, tools, undo, autosave, playing a map, deleting it (server running, seeded) |
 | `npm run test:keys` | A game against the computer played with the keyboard alone (server running, seeded) |
@@ -425,6 +427,23 @@ replays the download under today's code with the game's own snapshot. Read
 only, and the full log even of a game in progress: it is for the owner, and
 the token must never go in a URL. Built because pulling a game through the
 browser (the replay route needs a session) meant downloading a file by hand.
+
+**Prices are set by equal-gold skirmishes, not by feel** (2026-11-11, the
+owner's request to check costs). `scripts/balance.ts` plays armies against
+each other with no buying; the `squad` test (8 riflemen + 2 of the class
+against 8 riflemen + the same gold in riflemen) is the one that judges
+support classes fairly, and a rifle-against-rifle control lands at 43%, not
+50% (games reaching round 60 are scored on surviving value), so 43% is
+"fair". With movement cut a quarter (the owner's call) the results were:
+officer 2 beat 3 riflemen 62% and lost to 4 at 32% (so 170 gold); healer 2
+beat 1 rifleman 53%, lost to 2 at 23% (so 70); shotgun needed 130 health,
+range 5 and 50% damage at range to stop losing every fight it walks into
+(10% to 42%); the heavy at 160 won 85% (now 180, blast 30%); sniper is
+93% on open Crossroads and 7% in the Facility: map-dependent by design.
+The squad test can't see a price change smaller than half a rifleman (it
+rounds the other side to whole riflemen): test the boundaries instead.
+Bots play these, and they don't flank, ambush or hold corners, so classes
+that live on that (commando, riot, shotgun) read weaker than they are.
 
 **Games from before version 2 are upgraded, not refused.** Their snapshot has
 no `version`: `upgradeSnapshot` keeps their numbers where the field still
