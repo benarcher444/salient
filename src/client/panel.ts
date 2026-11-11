@@ -12,6 +12,7 @@ import {
   canPlan,
   draftProblem,
   goldLeft,
+  partialState,
   isMine,
   isMyAttackTurn,
   moveOrderFor,
@@ -25,6 +26,7 @@ import {
 } from "./state.js";
 import { baseTiles } from "../game/visibility.js";
 import type { SeatPublic } from "../game/view.js";
+import { unitUpkeep, upkeepFor } from "../game/rules.js";
 
 export const esc = (v: unknown) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -68,10 +70,12 @@ export function renderTopBar(s: ClientState) {
     gold.hidden = false;
     const left = canPlan(s) ? goldLeft(s) : v.gold;
     const income = incomePerRound(s);
-    const label = `${left} gold; +${income} at the end of every round (${RULES.baseIncome} base${income > RULES.baseIncome ? `, ${income - RULES.baseIncome} from supply depots` : ""})`;
+    const keep = RULES.upkeep ? upkeepFor(partialState(s), v.seat) : 0;
+    const net = income - keep;
+    const label = `${left} gold; ${net >= 0 ? "+" : "−"}${Math.abs(net)} at the end of every round (${RULES.baseIncome} base${income > RULES.baseIncome ? `, ${income - RULES.baseIncome} from supply depots` : ""}${RULES.upkeep ? `, less ${keep} upkeep` : ""})`;
     gold.title = label;
     gold.setAttribute("aria-label", label);
-    gold.innerHTML = `<span class="coin"></span><strong>${left}</strong><span class="faint">gold</span><span class="income-chip">+${income}<span class="faint">/round</span></span>`;
+    gold.innerHTML = `<span class="coin"></span><strong>${left}</strong><span class="faint">gold</span><span class="income-chip">${net >= 0 ? "+" : "−"}${Math.abs(net)}<span class="faint">/round</span></span>`;
   } else gold.hidden = true;
 }
 
@@ -242,7 +246,7 @@ function planningBlock(s: ClientState): string {
       const u = UNITS[k];
       const can = u.cost <= left;
       return `<button class="shop-item" type="button" data-action="buy" data-kind="${k}"${can ? "" : " disabled"} title="${esc(u.role)}">
-  <span class="unit-badge" ${seatStyle(v.seat!)}>${glyph(k)}</span><span class="shop-name">${esc(u.name)}</span><span class="shop-cost">${u.cost}g</span>${kbd((i + 1) % 10)}
+  <span class="unit-badge" ${seatStyle(v.seat!)}>${glyph(k)}</span><span class="shop-name">${esc(u.name)}</span><span class="shop-cost">${u.cost}g${RULES.upkeep ? `<small class="faint" title="Upkeep a round"> +${Math.round(unitUpkeep(k) * 10) / 10}/rd</small>` : ""}</span>${kbd((i + 1) % 10)}
 </button>`;
     }).join("")}</div><p class="faint small">${left} gold left this round.</p></div>`);
   } else if (sel?.type === "spawn") {

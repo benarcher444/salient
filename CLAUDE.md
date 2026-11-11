@@ -341,6 +341,20 @@ still take a post in one round). Supply depots stay engineer-only, a step a
 round. Code keeps "income" (`incomeOwners`, `map.income`); everything a
 player reads says supply depot.
 
+**House rules are chosen per game and live in its tuning snapshot.** The
+owner wanted to try rules without committing to them. The new-game form's
+checkboxes set `upkeep` and `healOnlyNearBase` (0/1 numbers in
+`RulesTuning`, both 0 in `rules.json`, so every older snapshot reads them as
+off) in that game's `rules_data` (`createGame`'s `HouseRules`); the rules,
+the browser and replays then just read `RULES` as for any number. Upkeep:
+each unit costs `upkeepPer100 × (cost/100)^upkeepExponent` a round (5,
+1.3: dearer units more than their share, the owner's call), less
+`upkeepAllowance` (20), out of income; gold never goes below 0 and there is
+no other penalty (the owner's call). Heal at base: ordinary healing only on
+or beside a base tile the side holds (`nearOwnBase`), a healer's anywhere;
+the board washes those tiles faintly. The battle title lists a game's house
+rules. `simulate.ts --house=upkeep,heal` plays under them.
+
 **A unit standing on a site shows whose it is.** The unit covers the tile's
 own colours, so `drawSiteBadges` puts a badge on the tile's corner, over the
 unit: the owner's colour (dashed grey when neutral) with the site's sign

@@ -95,6 +95,13 @@ export interface RulesTuning {
   roundLimit: number;
   baseCaptureRounds: number;
   engineerBaseCaptureRounds: number;
+  /** House rule, chosen per game (0 off, 1 on): units cost gold every round to keep. */
+  upkeep: number;
+  upkeepPer100: number;
+  upkeepExponent: number;
+  upkeepAllowance: number;
+  /** House rule, chosen per game (0 off, 1 on): units heal only on or beside their side's base tiles. */
+  healOnlyNearBase: number;
   siteSight: number;
   minHitChance: number;
   maxHitChance: number;
@@ -171,6 +178,11 @@ const RULE_NUMBERS: NumberRule[] = [
   ["roundLimit", 0, 1000, true],
   ["baseCaptureRounds", 1, 100, true],
   ["engineerBaseCaptureRounds", 1, 100, true],
+  ["upkeep", 0, 1, true],
+  ["upkeepPer100", 0, 1000],
+  ["upkeepExponent", 0, 5],
+  ["upkeepAllowance", 0, 100_000],
+  ["healOnlyNearBase", 0, 1, true],
   ["siteSight", 0, 40],
   ["minHitChance", 0, 100],
   ["maxHitChance", 0, 100],

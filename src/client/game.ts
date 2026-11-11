@@ -7,6 +7,7 @@ import { useTuning } from "../game/tuning.js";
 import { pathTo } from "../game/movement.js";
 import { UNITS, UNIT_KINDS, hasTrait } from "../game/units.js";
 import { RULES } from "../game/constants.js";
+import { nearOwnBase } from "../game/rules.js";
 import { baseTiles } from "../game/visibility.js";
 import type { Facing, GameEvent, Point, Unit, UnitKind } from "../game/types.js";
 import type { PlayerView } from "../game/view.js";
@@ -20,6 +21,7 @@ import {
   firstLeg,
   fullPathTo,
   goldLeft,
+  partialState,
   isMine,
   isMyAttackTurn,
   moveOrderFor,
@@ -474,7 +476,7 @@ function logEvent(e: GameEvent, round: number) {
       break;
     }
     case "income":
-      html = `+${e.amount} gold.`;
+      html = e.upkeep ? `+${e.amount} gold, less ${e.upkeep} upkeep.` : `+${e.amount} gold.`;
       break;
     case "eliminated":
       html = `${who(e.seat)} ${e.seat === seat ? "have" : "has"} no base and no units left: knocked out.`;
@@ -955,7 +957,11 @@ function showTooltip(tile: Point, sx: number, sy: number) {
   const u = unitAt(s, tile);
   if (u) {
     const site = siteLine(u);
-    tooltip.innerHTML = `<strong>${unitLabel(s, u)}</strong><span>${u.hp} / ${UNITS[u.kind].hp} hp · facing ${facingName(u.facing)}</span>${site ? `<span>${site}</span>` : ""}`;
+    const wounded = isMine(s, u) && u.hp < UNITS[u.kind].hp;
+    const healing = wounded && RULES.healOnlyNearBase && s.view
+      ? nearOwnBase(s.map, partialState(s), u) ? `<span>Heals here: +${RULES.healPerRound} a round if not hit.</span>` : `<span>Not healing: units heal only beside your base tiles (or next to a healer).</span>`
+      : "";
+    tooltip.innerHTML = `<strong>${unitLabel(s, u)}</strong><span>${u.hp} / ${UNITS[u.kind].hp} hp · facing ${facingName(u.facing)}</span>${site ? `<span>${site}</span>` : ""}${healing}`;
     tooltip.style.left = `${sx + 14}px`;
     tooltip.style.top = `${sy + 14}px`;
     tooltip.hidden = false;

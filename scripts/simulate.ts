@@ -14,6 +14,7 @@ import { MAPS } from "../src/game/maps.js";
 import { streamFor } from "../src/game/rng.js";
 import { applyAction, newGame } from "../src/game/rules.js";
 import { viewFor } from "../src/game/view.js";
+import { FILE_TUNING, useTuning } from "../src/game/tuning.js";
 import { RuleError, type Action, type UnitKind } from "../src/game/types.js";
 
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split("=")[1];
@@ -28,6 +29,12 @@ if (!levelList.every(isBotLevel)) {
 }
 const levels = levelList as BotLevel[];
 const mixed = new Set(levels).size > 1;
+// --house=upkeep,heal: play under the house rules a game can be created with.
+const houseArg = (arg("house") ?? "").split(",").filter(Boolean);
+if (houseArg.length) {
+  useTuning({ ...FILE_TUNING, rules: { ...FILE_TUNING.rules, upkeep: houseArg.includes("upkeep") ? 1 : 0, healOnlyNearBase: houseArg.includes("heal") ? 1 : 0 } });
+  console.log(`House rules: ${houseArg.join(", ")}`);
+}
 
 let problems = 0;
 for (const map of maps) {

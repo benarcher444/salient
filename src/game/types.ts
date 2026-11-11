@@ -215,7 +215,7 @@ export type GameEvent =
   | { type: "hold"; unitId: number; seat: Seat }
   | { type: "capture"; site: "post" | "income" | "base"; index: number; from: Seat | null; to: Seat | null }
   | { type: "captureProgress"; site: "base" | "post"; index: number; seat: Seat; rounds: number; needed: number }
-  | { type: "income"; seat: Seat; amount: number }
+  | { type: "income"; seat: Seat; amount: number; upkeep?: number }
   | { type: "eliminated"; seat: Seat }
   | { type: "round"; round: number }
   | { type: "phase"; phase: Phase }

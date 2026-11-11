@@ -87,6 +87,11 @@ any class any of the existing ones.
 | `roundLimit` | If nobody has won after this many rounds, the game is a draw. 0 means no limit: a game ends only when one side is left. |
 | `baseCaptureRounds` | Rounds a unit must hold an enemy base tile to make it neutral, and the same again to make it its own side's. Whole number. |
 | `engineerBaseCaptureRounds` | The same for an engineer (1 = a step every round). |
+| `upkeep` | House rule, normally set per game when it is created (the new-game form's checkbox): 1 = units cost gold every round to keep. Leave it 0 here. |
+| `upkeepPer100` | A unit's upkeep a round is `upkeepPer100 × (cost / 100) ^ upkeepExponent`: 5 makes a 100-gold rifleman 5 a round. |
+| `upkeepExponent` | Above 1, dearer units cost more than their price's share to keep (1.3: a 180-gold heavy about 10.7, a 60-gold scout about 2.6). |
+| `upkeepAllowance` | The first this-much of a side's upkeep each round is free, so a small army costs nothing. |
+| `healOnlyNearBase` | House rule, per game like `upkeep`: 1 = ordinary healing (`healPerRound`) only on or beside a base tile your side holds. A healer's help still works anywhere. |
 | `siteSight` | How far you see around base tiles and command posts you hold. |
 | `minHitChance`, `maxHitChance` | Every shot's chance is kept between these percentages. |
 | `coverFactor` | Hit chance is multiplied by this when the target is in cover (0.7 = 30% less likely). |

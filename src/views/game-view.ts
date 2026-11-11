@@ -23,10 +23,13 @@ export function battlePage(user: User, live: LiveGame, seat: number | null): Htm
   const level = live.players.some((p) => p.isBot)
     ? `<small class="bot-level" title="Computer opponents: ${BOT_LEVEL_NAME[live.game.botLevel]}"> · ${BOT_LEVEL_NAME[live.game.botLevel]}</small>`
     : "";
+  // House rules this game was made with, beside the name, so nobody is surprised.
+  const house = [live.tuning.rules.upkeep ? "Upkeep" : "", live.tuning.rules.healOnlyNearBase ? "Heal at base" : ""].filter(Boolean);
+  const houseNote = house.length ? `<small class="bot-level" title="House rules: ${house.join(", ")}"> · ${house.join(" · ")}</small>` : "";
   const body = `<div class="battle" id="battle">
   <header class="battle-bar">
     ${user.isGuest ? "" : `<a class="btn btn-ghost btn-icon" href="/" aria-label="Back to your games">${icons.back}</a>`}
-    <div class="battle-title"><strong>${esc(map.name)}${level}</strong><span id="phase-label">Connecting…</span></div>
+    <div class="battle-title"><strong>${esc(map.name)}${level}${houseNote}</strong><span id="phase-label">Connecting…</span></div>
     <div class="scoreboard" id="scoreboard" aria-label="Sides"></div>
     <div class="gold-pill" id="gold" hidden></div>
   </header>

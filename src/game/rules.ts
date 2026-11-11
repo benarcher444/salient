@@ -367,6 +367,26 @@ function resolveMoves(map: MapDef, state: GameState, events: GameEvent[]) {
 
 // --- Attacks ---------------------------------------------------------------
 
+/** One unit's upkeep a round under the house rule: dearer units cost more than their share. */
+export function unitUpkeep(kind: Unit["kind"]): number {
+  return RULES.upkeepPer100 * Math.pow(UNITS[kind].cost / 100, RULES.upkeepExponent);
+}
+
+/**
+ * What a side pays a round to keep its army (0 unless the game has the
+ * upkeep house rule): the units' upkeep, less the free allowance, rounded.
+ */
+export function upkeepFor(state: Pick<GameState, "units">, seat: Seat): number {
+  if (!RULES.upkeep) return 0;
+  const total = state.units.filter((u) => u.seat === seat).reduce((t, u) => t + unitUpkeep(u.kind), 0);
+  return Math.max(0, Math.round(total - RULES.upkeepAllowance));
+}
+
+/** On or next to (diagonals too) a base tile its side holds: where it heals under the house rule. */
+export function nearOwnBase(map: MapDef, state: Pick<GameState, "baseOwners" | "seatCount">, u: Pick<Unit, "x" | "y" | "seat">): boolean {
+  return baseTiles(map, state.seatCount).some((t, i) => state.baseOwners[i] === u.seat && Math.max(Math.abs(t.x - u.x), Math.abs(t.y - u.y)) <= 1);
+}
+
 /** Seats in the order they take attack turns this round. The lead rotates every round. */
 export function initiativeOrder(state: GameState): Seat[] {
   const order: Seat[] = [];
@@ -611,14 +631,17 @@ function endRound(map: MapDef, state: GameState, events: GameEvent[]) {
     map.income.forEach((site, i) => {
       if (state.incomeOwners[i] === s.seat) amount += site.value;
     });
-    s.gold += amount;
-    events.push({ type: "income", seat: s.seat, amount });
+    // House rule: the army's keep comes out of it, never below nothing.
+    const upkeep = upkeepFor(state, s.seat);
+    s.gold = Math.max(0, s.gold + amount - upkeep);
+    events.push({ type: "income", seat: s.seat, amount, ...(RULES.upkeep ? { upkeep } : {}) });
   }
 
-  // Healing reads the damage flags before they are reset below.
+  // Healing reads the damage flags before they are reset below. House rule:
+  // ordinary healing only on or beside your side's base tiles.
   for (const u of state.units) {
     const max = UNITS[u.kind].hp;
-    let heal = u.damaged ? 0 : RULES.healPerRound;
+    let heal = u.damaged || (RULES.healOnlyNearBase && !nearOwnBase(map, state, u)) ? 0 : RULES.healPerRound;
     const medicNearby = state.units.some(
       (m) => m !== u && m.seat === u.seat && hasTrait(m.kind, "medic") && Math.max(Math.abs(m.x - u.x), Math.abs(m.y - u.y)) <= RULES.medicRange,
     );

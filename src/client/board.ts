@@ -339,6 +339,16 @@ export class Board {
     baseTiles(this.s.map, v.seats.length).forEach((t, i) => {
       const owner = v.baseOwners[i] ?? null;
       // (A capture under way is drawn over the unit taking it: drawSiteBadges.)
+      // Heal-at-base house rule: a faint wash on the tiles round your own
+      // base tiles, where your units heal.
+      if (RULES.healOnlyNearBase && owner !== null && owner === v.seat) {
+        g.fillStyle = alpha(colourHex(this.pal.seats[owner]!), 0.1);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const x = t.x + dx;
+          const y = t.y + dy;
+          if (x >= 0 && y >= 0 && x < this.s.map.width && y < this.s.map.height && !(dx === 0 && dy === 0)) g.fillRect(x, y, 1, 1);
+        }
+      }
       if (owner === t.home) return;
       g.save();
       if (owner === null) {

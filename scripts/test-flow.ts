@@ -328,11 +328,15 @@ check("the computer's level is hidden when playing friends", !(await alex.page.i
 await alex.page.check('input[name="opponents"][value="bots"]', { force: true });
 check("and offered against the computer, Regular by default", (await alex.page.isVisible("#bot-level")) && (await alex.page.inputValue("#bot-level")) === "regular");
 await alex.page.selectOption("#bot-level", "veteran");
+check("house rules are offered, off by default", !(await alex.page.isChecked("#rule-upkeep")) && !(await alex.page.isChecked("#rule-base-healing")));
+await alex.page.check("#rule-upkeep");
+await alex.page.check("#rule-base-healing");
 await Promise.all([alex.page.waitForURL(/\/g\//), alex.page.click('#new-game button[type="submit"]')]);
 await alex.page.waitForSelector("#board", { timeout: 10_000 });
 check("a game against the computer starts straight away", true);
-const levelLabel = (await alex.page.textContent(".battle-title .bot-level")) ?? "";
+const levelLabel = (await alex.page.textContent(".battle-title strong")) ?? "";
 check("the battle shows the computer's level", /Veteran/.test(levelLabel), levelLabel.trim());
+check("and the house rules it was made with", /Upkeep/.test(levelLabel) && /Heal at base/.test(levelLabel), levelLabel.trim());
 await waitFor(alex.page, "the bot's first orders", async () => (await hooks(alex.page, (h) => h.phase()))?.ready[1] === true);
 check("the bot locks in its orders without being asked", true);
 await deploy(alex.page, ["rifleman"]);

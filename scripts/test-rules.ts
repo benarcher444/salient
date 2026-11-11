@@ -9,7 +9,7 @@ import { MAPS, MapBuilder, getMap, registerMap, symmetryTransforms } from "../sr
 import { checkMap } from "../src/game/mapcheck.js";
 import { pathTo, reachable, validatePath } from "../src/game/movement.js";
 import { damageRange, previewShot, rollShot, type ShotPreview } from "../src/game/combat.js";
-import { applyAction, isFacing, newGame, readyShooters, targetsFor, validateOrders } from "../src/game/rules.js";
+import { applyAction, isFacing, newGame, readyShooters, targetsFor, unitUpkeep, upkeepFor, validateOrders } from "../src/game/rules.js";
 import { streamFor } from "../src/game/rng.js";
 import { UNITS, UNIT_KINDS } from "../src/game/units.js";
 import { viewFor } from "../src/game/view.js";
@@ -846,6 +846,47 @@ section("Upkeep: captures, income, healing");
   check("a unit hit this round still gets the healer's share", at(s, 11)!.hp === 50 + RULES.medicHeal, `${at(s, 11)!.hp}`);
   check("the healer's tuning: +10 to the tiles next to it", RULES.medicHeal === 10 && RULES.medicRange === 1);
   check("engineers no longer heal", at(s, 12)!.hp === 50 + heal, `${at(s, 12)!.hp}`);
+}
+{
+  // House rules: off unless a game is created with them.
+  check("house rules are off in the files", FILE_TUNING.rules.upkeep === 0 && FILE_TUNING.rules.healOnlyNearBase === 0);
+  const house = (rules: Partial<Tuning["rules"]>): Tuning => ({ ...FILE_TUNING, rules: { ...FILE_TUNING.rules, ...rules } });
+  const withUpkeep = house({ upkeep: 1 });
+  board("upkeep");
+  withTuning(withUpkeep, () => {
+    check("upkeep grows faster than price: a heavy costs more than its price's share", unitUpkeep("heavy") / UNITS.heavy.cost > unitUpkeep("rifleman") / UNITS.rifleman.cost && unitUpkeep("rifleman") === RULES.upkeepPer100);
+    const army = Array.from({ length: 10 }, (_, i) => unit(i + 1, 0, "rifleman", i % 10, 2 + Math.floor(i / 10)));
+    const st = stateOn("upkeep", army);
+    const owed = upkeepFor(st, 0);
+    check("ten riflemen owe ten rifles' upkeep, less the allowance", owed === Math.round(10 * RULES.upkeepPer100 - RULES.upkeepAllowance), String(owed));
+    check("a small army owes nothing", upkeepFor(stateOn("upkeep", army.slice(0, 2)), 0) === 0);
+    const r = resolve(st, [], []);
+    check("upkeep comes out of the round's income", r.state.seats[0]!.gold === RULES.startGold + RULES.baseIncome - owed, `${r.state.seats[0]!.gold}`);
+    check("and the log says so", r.events.some((e) => e.type === "income" && e.seat === 0 && e.upkeep === owed));
+    const broke = stateOn("upkeep", Array.from({ length: 30 }, (_, i) => unit(i + 1, 0, "heavy", i % 12, 1 + Math.floor(i / 12))));
+    broke.seats[0]!.gold = 0;
+    check("gold never goes below nothing", resolve(broke, [], []).state.seats[0]!.gold === 0);
+  });
+  withTuning(FILE_TUNING, () => {
+    const army = Array.from({ length: 10 }, (_, i) => unit(i + 1, 0, "rifleman", i % 10, 2));
+    check("without the house rule, no upkeep", upkeepFor(stateOn("upkeep", army), 0) === 0 && resolve(stateOn("upkeep", army), [], []).state.seats[0]!.gold === RULES.startGold + RULES.baseIncome);
+  });
+
+  // Heal at base: seat 0's base is (0..1, 0..1) on these boards.
+  withTuning(house({ healOnlyNearBase: 1 }), () => {
+    const st = stateOn("upkeep", [
+      unit(1, 0, "rifleman", 2, 2, { hp: 50 }), // beside the base, diagonally
+      unit(2, 0, "rifleman", 6, 6, { hp: 50 }), // far from it
+      unit(3, 0, "rifleman", 9, 6, { hp: 50 }),
+      unit(4, 0, "healer", 10, 6),
+    ]);
+    const r = resolve(st, [], []).state;
+    check("heal at base: beside a base tile you hold, a unit heals", at(r, 1)!.hp === 50 + RULES.healPerRound, `${at(r, 1)!.hp}`);
+    check("away from it, it doesn't", at(r, 2)!.hp === 50, `${at(r, 2)!.hp}`);
+    check("but a healer's help still works anywhere", at(r, 3)!.hp === 50 + RULES.medicHeal, `${at(r, 3)!.hp}`);
+    const lost = { ...st, baseOwners: st.baseOwners.map((o) => (o === 0 ? 1 : o)) };
+    check("a base tile you've lost is no help", resolve(lost, [], []).state.units.find((u) => u.id === 1)!.hp === 50);
+  });
 }
 {
   board("timeout");

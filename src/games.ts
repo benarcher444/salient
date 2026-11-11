@@ -211,14 +211,26 @@ function botUserIds(count: number): number[] {
  * `botLevel`, and the game starts at once. The caller checks the map is
  * playable (checkMap).
  */
-export function createGame(userId: number, map: MapDef, seatCount: number, bots = false, botLevel: BotLevel = "regular"): string {
+/** Optional rules a game can be created with, for trying them out. Stored in its tuning snapshot. */
+export interface HouseRules {
+  upkeep?: boolean;
+  healOnlyNearBase?: boolean;
+}
+
+export function createGame(userId: number, map: MapDef, seatCount: number, bots = false, botLevel: BotLevel = "regular", house: HouseRules = {}): string {
   if (seatCount < 2 || seatCount > map.seats) throw new Error("bad seat count");
   const id = newGameId();
   const now = Date.now();
   const botIds = bots ? botUserIds(seatCount - 1) : [];
   const mapData = JSON.stringify(map);
   const snapshot = mapFor({ id, mapId: map.id, mapData });
-  const rulesData = JSON.stringify({ version: TUNING_VERSION, ...FILE_TUNING });
+  // House rules live in the game's own tuning snapshot, so the rules, the
+  // browser and every replay of this game read them like any other number.
+  const rulesData = JSON.stringify({
+    version: TUNING_VERSION,
+    ...FILE_TUNING,
+    rules: { ...FILE_TUNING.rules, upkeep: house.upkeep ? 1 : 0, healOnlyNearBase: house.healOnlyNearBase ? 1 : 0 },
+  });
   sqlite.transaction(() => {
     db.insert(games)
       .values({

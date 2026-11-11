@@ -112,6 +112,10 @@ ${notice ? `<p class="alert alert-ok" role="status">${esc(notice)}</p>` : ""}
             ${Array.from({ length: (MAPS[0]?.seats ?? 2) - 1 }, (_, i) => `<option value="${i + 2}">${i + 2} players</option>`).join("")}
           </select>
         </label>
+        <fieldset class="house-rules"><legend>House rules</legend>
+          <label class="check"><input type="checkbox" name="upkeep" id="rule-upkeep"><span><strong>Upkeep.</strong> Units cost gold every round to keep, dearer ones more than their share.</span></label>
+          <label class="check"><input type="checkbox" name="baseHealing" id="rule-base-healing"><span><strong>Heal at base.</strong> Units heal only on or beside your base tiles; healers still heal anywhere.</span></label>
+        </fieldset>
         <button class="btn btn-primary btn-lg" type="submit">${icons.plus}<span>Create game</span></button>
         <p class="faint small">Computer opponents start straight away: Novice for learning, Veteran for a fight. With friends you get a link to share, and the game starts when every seat is filled.</p>
       </div>
@@ -208,6 +212,12 @@ export function rulesPage(user: User | null): Html {
       <li><strong>Supply depots</strong> pay +25 gold a round, on top of everyone's +${RULES.baseIncome}. Only <strong>engineers</strong> can capture them, one step a round.</li>
       <li>A unit standing on a post, depot or base tile shows a <strong>badge</strong> in the tile's corner in the colour of whoever holds it now (dashed grey: nobody), with dots for the rounds of a capture held so far. Hover over the unit for what happens next.</li>
       <li><strong>Fog of war:</strong> you only see what your units and the base tiles and posts you hold can see.</li>
+    </ul>
+    <h2>House rules</h2>
+    <p>Two optional rules can be switched on when a game is created, and are shown beside the map's name in the battle.</p>
+    <ul>
+      <li><strong>Upkeep.</strong> Every unit costs gold each round to keep: ${RULES.upkeepPer100} × (its price ÷ 100)<sup>${RULES.upkeepExponent}</sup>, so dear units cost more than their share (a rifleman ${Math.round(RULES.upkeepPer100)}, a ${Math.round(RULES.upkeepPer100 * Math.pow(1.8, RULES.upkeepExponent) * 10) / 10}-gold heavy much more). The first ${RULES.upkeepAllowance} gold of upkeep each round is free. It comes out of your income; your gold never goes below nothing.</li>
+      <li><strong>Heal at base.</strong> Units only heal (+${RULES.healPerRound} a round) on or beside a base tile your side holds. A healer's +${RULES.medicHeal} to the units next to it still works anywhere.</li>
     </ul>
     <h2>Playing the computer</h2>
     <p>Computer opponents come in three levels, picked when you start the game. A <strong>Novice</strong> wanders, buys whatever it fancies and often takes the first shot it sees. A <strong>Regular</strong> plays a sound, simple game. A <strong>Veteran</strong> picks its fights: it finishes off the wounded, keeps out of your sights, and buys to counter what it sees of your side. None of them cheats: each sees exactly what a player in its seat would, through the same fog.</p>
