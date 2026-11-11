@@ -8,7 +8,7 @@ import { UNIT_GLYPH, UNIT_SHAPE, UNIT_SIZE, shapeFront } from "../game/glyphs.js
 import { UNITS, hasTrait } from "../game/units.js";
 import { baseTiles } from "../game/visibility.js";
 import type { Point, Unit } from "../game/types.js";
-import { Animator } from "./animate.js";
+import { Animator, FOCUS_MS, REMAINS_MS } from "./animate.js";
 import { renderMapArt } from "./art.js";
 import { drawIncome, drawPost } from "./sites.js";
 import { Camera } from "./camera.js";
@@ -50,6 +50,8 @@ export class Board {
   private h = 0;
   /** Set once the player pans or zooms; from then on resizes leave the view alone. */
   userMoved = false;
+  /** The camera gliding to a shot (see Animator.focus), in tile coordinates. */
+  private glide: { fromX: number; fromY: number; toX: number; toY: number; start: number } | null = null;
 
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -89,10 +91,17 @@ export class Board {
     this.fitHome();
   }
 
+  /** Zoom out to the whole map (Z, the fit button): as far out as the camera goes. */
+  showWhole() {
+    this.userMoved = true;
+    this.camera.fit(this.w, this.h, 12, true);
+    this.camera.clamp(this.w, this.h);
+  }
+
   /**
    * Fill the view and, where the map is cropped, centre on this player's own
-   * base, so what they deploy onto is on screen. (The camera keeps the map
-   * covering the view, so this never shows past an edge.)
+   * base, so what they deploy onto is on screen. (Filling, it never shows
+   * past an edge; zooming out from here can show the whole map.)
    */
   private fitHome() {
     this.camera.fit(this.w, this.h);
@@ -106,6 +115,53 @@ export class Board {
     this.camera.x = cx - this.w / this.camera.scale / 2;
     this.camera.y = cy - this.h / this.camera.scale / 2;
     this.camera.clamp(this.w, this.h);
+  }
+
+  /**
+   * Is this tile comfortably on screen (inside the middle of the view, not
+   * at an edge where the shot would be half out of sight)?
+   */
+  inView(p: Point, margin = 0.15): boolean {
+    const sp = this.camera.toScreen(p.x + 0.5, p.y + 0.5);
+    return sp.x > this.w * margin && sp.x < this.w * (1 - margin) && sp.y > this.h * margin && sp.y < this.h * (1 - margin);
+  }
+
+  /**
+   * The camera's glide to a shot at one of your units, like Civilization:
+   * it frames shooter and target together when they fit, the target alone
+   * when not, and doesn't move at all if the target is already well in view.
+   */
+  private follow(now: number) {
+    for (const f of this.anim.focus) {
+      if (f.taken || now < f.start) continue;
+      f.taken = true;
+      if (this.inView(f.to)) continue;
+      const visW = this.w / this.camera.scale;
+      const visH = this.h / this.camera.scale;
+      const both = Math.abs(f.from.x - f.to.x) + 2 < visW * 0.8 && Math.abs(f.from.y - f.to.y) + 2 < visH * 0.8;
+      const c = both ? { x: (f.from.x + f.to.x) / 2 + 0.5, y: (f.from.y + f.to.y) / 2 + 0.5 } : { x: f.to.x + 0.5, y: f.to.y + 0.5 };
+      // Work out where the clamp would let it end, so the glide doesn't jump at the end.
+      const save = { x: this.camera.x, y: this.camera.y };
+      this.camera.x = c.x - visW / 2;
+      this.camera.y = c.y - visH / 2;
+      this.camera.clamp(this.w, this.h);
+      this.glide = { fromX: save.x, fromY: save.y, toX: this.camera.x, toY: this.camera.y, start: now };
+      this.camera.x = save.x;
+      this.camera.y = save.y;
+      this.userMoved = true;
+    }
+    if (this.glide) {
+      const k = Math.min(1, (now - this.glide.start) / (FOCUS_MS - 50));
+      const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      this.camera.x = this.glide.fromX + (this.glide.toX - this.glide.fromX) * e;
+      this.camera.y = this.glide.fromY + (this.glide.toY - this.glide.fromY) * e;
+      if (k >= 1) this.glide = null;
+    }
+  }
+
+  /** Stop a glide: the player took the camera (panned, zoomed, clicked the minimap). */
+  stopGlide() {
+    this.glide = null;
   }
 
   /** Centre the view on a point of the map (in tiles), as far as the edges allow. */
@@ -215,6 +271,7 @@ export class Board {
     const g = this.ctx;
     const dpr = window.devicePixelRatio || 1;
     const cam = this.camera;
+    this.follow(now);
     cam.clamp(this.w, this.h);
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, this.w, this.h);
@@ -234,6 +291,7 @@ export class Board {
     this.drawPlanning(now);
     this.drawAttack(now);
     this.drawCursorArc(now);
+    this.drawRemains(now);
     this.drawUnits(now);
     this.drawEffects(now);
     this.drawHover(now);
@@ -642,11 +700,54 @@ export class Board {
       const x = gh.unit.x + 0.5;
       const y = gh.unit.y + 0.5;
       if (gh.dies) {
-        this.burst(x, y, this.pal.seats[gh.unit.seat]!, t);
-        this.token(gh.unit, x, y, facingAngle(gh.unit.facing), Math.max(0, 1 - t * 1.6), { hp: 0, now, scale: 1 + t * 0.3 });
+        this.death(gh.unit, x, y, t, now);
       } else {
         this.token(gh.unit, x, y, facingAngle(gh.unit.facing), Math.max(0, 1 - t), { hp: gh.unit.hp, now });
       }
+    }
+  }
+
+  /**
+   * A unit dying, t from 0 to 1: a white flash as the shot lands, then it
+   * spins and shrinks as it falls, fading, with a burst in its side's colour.
+   */
+  private death(u: Unit, x: number, y: number, t: number, now: number) {
+    const g = this.ctx;
+    const seat = this.pal.seats[u.seat]!;
+    if (t < 0.6) this.burst(x, y, seat, t / 0.6);
+    const fall = Math.max(0, (t - 0.1) / 0.9);
+    const opacity = t < 0.35 ? 1 : Math.max(0, 1 - (t - 0.35) / 0.65);
+    this.token(u, x, y, facingAngle(u.facing) + fall * fall * 2.6, opacity, { hp: 0, now, scale: 1 - 0.45 * fall });
+    if (t < 0.14) {
+      g.fillStyle = alpha("#ffffff", 0.85 * (1 - t / 0.14));
+      g.beginPath();
+      g.arc(x, y, 0.42 + t, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+
+  /** Where units fell: a scorch mark and a cross in the side's colour, fading over a few seconds. */
+  private drawRemains(now: number) {
+    const g = this.ctx;
+    for (const r of this.anim.remains) {
+      const k = (now - r.start) / REMAINS_MS;
+      if (k < 0) continue;
+      const a = k < 0.08 ? k / 0.08 : 1 - Math.max(0, (k - 0.6) / 0.4);
+      const cx = r.at.x + 0.5;
+      const cy = r.at.y + 0.5;
+      g.fillStyle = alpha("#000000", 0.26 * a);
+      g.beginPath();
+      g.ellipse(cx, cy + 0.05, 0.34, 0.27, 0, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = alpha(colourHex(this.pal.seats[r.seat]!), 0.85 * a);
+      g.lineWidth = 0.08;
+      g.lineCap = "round";
+      g.beginPath();
+      g.moveTo(cx - 0.16, cy - 0.16);
+      g.lineTo(cx + 0.16, cy + 0.16);
+      g.moveTo(cx + 0.16, cy - 0.16);
+      g.lineTo(cx - 0.16, cy + 0.16);
+      g.stroke();
     }
   }
 

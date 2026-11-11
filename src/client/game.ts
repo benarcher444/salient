@@ -97,6 +97,7 @@ if (minimap) {
   let dragging = false;
   const moveTo = (e: PointerEvent) => {
     const r = minimap.getBoundingClientRect();
+    board.stopGlide();
     board.centreOn(board.minimapToWorld(minimap, e.clientX - r.left, e.clientY - r.top));
     board.userMoved = true;
     tooltip.hidden = true;
@@ -192,7 +193,13 @@ function onMessage(m: ServerMessage) {
   for (const u of v.units) knownUnits.set(u.id, { seat: u.seat, kind: u.kind });
   for (const e of m.events) if (e.type === "spawn") knownUnits.set(e.unit.id, e.unit);
 
-  board.anim.ingest(before, v, m.events, performance.now());
+  // Like Civilization: an enemy's shot at one of yours (or a shell bursting
+  // on them) brings the camera over first, unless it is already well in view.
+  const me = v.seat;
+  board.anim.ingest(before, v, m.events, performance.now(), {
+    focusOn: (e) =>
+      me !== null && e.shooterSeat !== me && (e.targetSeat === me || e.splash.some((x) => x.seat === me)) && !board.inView(e.to),
+  });
   tooltip.hidden = true;
   s.players = m.players;
   s.view = v;
@@ -884,6 +891,7 @@ attachGestures(canvas, board.camera, {
   hover: onHover,
   changed: () => {
     board.userMoved = true;
+    board.stopGlide();
     tooltip.hidden = true;
   },
 });
@@ -1090,7 +1098,7 @@ function onKey(e: KeyboardEvent): boolean {
       zoomBy(0.8);
       return true;
     case "z":
-      board.fit();
+      board.showWhole();
       return true;
   }
   return false;
@@ -1098,6 +1106,7 @@ function onKey(e: KeyboardEvent): boolean {
 
 function zoomBy(f: number) {
   board.userMoved = true;
+  board.stopGlide();
   const c = s.hover ? board.camera.toScreen(s.hover.x + 0.5, s.hover.y + 0.5) : { x: board.viewSize.w / 2, y: board.viewSize.h / 2 };
   board.camera.zoomAt(f, c.x, c.y);
 }
@@ -1124,7 +1133,7 @@ document.getElementById("zoom-out")!.addEventListener("click", () => {
   const { w, h } = board.viewSize;
   board.camera.zoomAt(0.8, w / 2, h / 2);
 });
-document.getElementById("zoom-fit")!.addEventListener("click", () => board.fit());
+document.getElementById("zoom-fit")!.addEventListener("click", () => board.showWhole());
 document.getElementById("key-help-open")!.addEventListener("click", () => (keyHelp.hidden = !keyHelp.hidden));
 document.getElementById("key-help-close")!.addEventListener("click", () => (keyHelp.hidden = true));
 

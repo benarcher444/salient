@@ -288,11 +288,23 @@ Health is a bar under the token, not a ring, because rings don't fit shapes.
 A sniper that hasn't moved carries a tripod badge (braced: full accuracy);
 a healer or officer under the cursor or selected shows the square its help
 reaches; a sniper's arc includes its scope's long strip; unarmed units have
-no arc. The battle board always fills its area (`Camera` with `fill`): no
-zooming out past it and no panning off the edge, so there is never an empty
-frame round the map. The editor keeps the whole-map fit. Under the side panel a minimap (`drawMinimap`) shows the whole map, the fog,
+no arc. The battle board starts filling its area (`Camera` with `fill`) and zooms
+out at most to the whole map (Z, the fit button: `showWhole`), so spare space
+shows on one axis at most, never both (the owner's rule, replacing "never any
+frame"): on an axis the map fills it can't be panned past an edge, and on
+one it doesn't it sits centred. The editor keeps its free whole-map fit. Under the side panel a minimap (`drawMinimap`) shows the whole map, the fog,
 the units this player can see and a box for the board's view; clicking or
 dragging it moves the view. Phones hide it: the bottom sheet has no room.
+
+**Shots at your units bring the camera over, like Civilization** (the
+owner's request). For a live update, `ingest` gets `focusOn`: an enemy's shot
+at one of yours (or a blast catching one) that isn't already well inside the
+view (`board.inView`, 15% margin) gets a `Focus`, and the shot waits
+`FOCUS_MS` while `board.follow` glides the camera to frame shooter and target
+(the target alone if both don't fit). Any pan, zoom or minimap click stops a
+glide. Replays don't do it. A unit killed flashes, spins and shrinks as it
+falls (`DEATH_MS`), a "Down" label shows under it, and a scorch mark with a
+cross in its side's colour stays on the tile for `REMAINS_MS`.
 
 **The whole battle can be played from the keyboard.** A cursor square is
 always on the board (`s.hover`; the mouse moves it too and leaving the board

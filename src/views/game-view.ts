@@ -43,7 +43,7 @@ export function battlePage(user: User, live: LiveGame, seat: number | null): Htm
         <button class="btn btn-icon keys-only" id="key-help-open" type="button" aria-label="Keyboard controls" title="Keyboard controls (?)">?</button>
         <button class="btn btn-icon" id="zoom-in" type="button" aria-label="Zoom in">+</button>
         <button class="btn btn-icon" id="zoom-out" type="button" aria-label="Zoom out">−</button>
-        <button class="btn btn-icon" id="zoom-fit" type="button" aria-label="Fit map to screen">${icons.target}</button>
+        <button class="btn btn-icon" id="zoom-fit" type="button" aria-label="Show the whole map" title="Show the whole map (Z)">${icons.target}</button>
       </div>
     </div>
     <aside class="side">
