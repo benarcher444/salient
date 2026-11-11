@@ -14,7 +14,7 @@ import { streamFor } from "../src/game/rng.js";
 import { UNITS, UNIT_KINDS } from "../src/game/units.js";
 import { viewFor } from "../src/game/view.js";
 import { replaySteps, type ReplayLog } from "../src/game/replay.js";
-import { chooseAction } from "../src/game/bot.js";
+import { BOT_LEVELS, chooseAction, type BotLevel } from "../src/game/bot.js";
 import { RuleError, type Action, type GameEvent, type GameState, type MapDef, type Point, type Unit, type UnitKind } from "../src/game/types.js";
 import { RULES } from "../src/game/constants.js";
 import { baseTiles, spawnTiles, visibleTiles } from "../src/game/visibility.js";
@@ -1055,6 +1055,99 @@ section("Replay");
   const a = streamFor("s", 1)();
   const b = streamFor("s", 2)();
   check("each action gets its own stream", a !== b && a >= 0 && a < 1);
+}
+
+// ---------------------------------------------------------------------------
+section("Computer opponents: three levels, all legal, none cheating");
+
+{
+  /** Bots play a game out (or to the round cap); counts refused actions, as the simulator does. */
+  const play = (mapId: string, seats: number, levels: BotLevel[], seed: string, cap = 40) => {
+    let g = newGame(mapId, seats);
+    const random = streamFor(`${seed}-bots`, 0);
+    let refused = 0;
+    let seq = 0;
+    let stuck = false;
+    const mostSpawns = new Map<BotLevel, number>();
+    while (g.phase !== "over" && g.round <= cap && seq < 5000) {
+      let acted = false;
+      for (let seat = 0; seat < seats && g.phase !== "over"; seat++) {
+        const level = levels[seat % levels.length]!;
+        const choice = chooseAction(viewFor(g, seat), random, level);
+        if (!choice) continue;
+        if (choice.type === "orders") mostSpawns.set(level, Math.max(mostSpawns.get(level) ?? 0, choice.orders.spawns.length));
+        try {
+          g = applyAction(g, { ...choice, seat } as Action, streamFor(seed, seq++)).state;
+        } catch (e) {
+          if (!(e instanceof RuleError)) throw e;
+          refused++;
+          const fallback: Action = g.phase === "planning" ? { type: "orders", seat, orders: { moves: [], spawns: [] } } : { type: "endAttacks", seat };
+          g = applyAction(g, fallback, streamFor(seed, seq++)).state;
+        }
+        acted = true;
+      }
+      if (!acted) {
+        stuck = true;
+        break;
+      }
+    }
+    return { g, refused, stuck, mostSpawns };
+  };
+
+  for (const level of BOT_LEVELS) {
+    const games = [play("crossroads", 2, [level], `lv-${level}-1`), play("riverside", 2, [level], `lv-${level}-2`), play("four-corners", 4, [level], `lv-${level}-3`, 25)];
+    const refused = games.reduce((t, r) => t + r.refused, 0);
+    check(`${level} bots only ever send legal actions`, refused === 0, `${refused} refused`);
+    check(`${level} bots never get stuck`, games.every((r) => !r.stuck));
+    check(`${level} bots play their games on past round 5`, games.every((r) => r.g.round > 5));
+  }
+  const mixed = [play("crossroads", 2, ["veteran", "novice"], "lv-mixed-1"), play("crossroads", 2, ["novice", "regular"], "lv-mixed-2"), play("four-corners", 4, ["veteran", "regular", "novice", "veteran"], "lv-mixed-3", 25)];
+  check("levels mixed in one game play legally too", mixed.every((r) => r.refused === 0 && !r.stuck), mixed.map((r) => r.refused).join(","));
+  check("a novice deploys at most two units a round", mixed.every((r) => (r.mostSpawns.get("novice") ?? 0) <= 2), mixed.map((r) => r.mostSpawns.get("novice")).join(","));
+
+  // Regular is the default and is the bot as it was: the same view and the
+  // same random stream give the same choice, and use up the same draws.
+  const sample = play("crossroads", 2, ["regular"], "lv-sample", 8).g;
+  let same = true;
+  const differs = { novice: false, veteran: false };
+  for (let seat = 0; seat < 2; seat++) {
+    const view = viewFor(sample, seat);
+    const a = streamFor("lv-same", seat);
+    const b = streamFor("lv-same", seat);
+    const plain = JSON.stringify(chooseAction(view, a));
+    if (plain !== JSON.stringify(chooseAction(view, b, "regular")) || a() !== b()) same = false;
+    for (const level of ["novice", "veteran"] as const) {
+      if (JSON.stringify(chooseAction(view, streamFor("lv-same", seat), level)) !== plain) differs[level] = true;
+    }
+  }
+  check("no level given means regular, draw for draw", same);
+  check("novice and veteran decide differently from regular", differs.novice && differs.veteran);
+
+  // No level sees through the fog: an enemy out of sight changes nothing.
+  board("bot-fog", () => {}, 20, 12);
+  const seen = [unit(1, 0, "rifleman", 3, 5, { facing: E }), unit(2, 0, "heavy", 2, 6, { facing: E }), unit(3, 1, "rifleman", 9, 5, { facing: W })];
+  const hidden = unit(4, 1, "sniper", 19, 0, { facing: W });
+  const withHidden = stateOn("bot-fog", [...seen, hidden]);
+  const without = stateOn("bot-fog", seen);
+  const fogged = !viewFor(withHidden, 0).units.some((u) => u.id === hidden.id);
+  check("(the extra enemy is out of seat 0's sight)", fogged);
+  for (const level of BOT_LEVELS) {
+    const a = JSON.stringify(chooseAction(viewFor(withHidden, 0), streamFor("fog", 0), level));
+    const b = JSON.stringify(chooseAction(viewFor(without, 0), streamFor("fog", 0), level));
+    check(`a ${level} bot plans the same with or without an enemy it can't see`, a === b);
+  }
+
+  // A veteran finishes off the wounded: two riflemen in its sights, one nearly dead.
+  board("bot-focus");
+  const focus = stateOn("bot-focus", [
+    unit(1, 0, "rifleman", 2, 5, { facing: E }),
+    unit(2, 1, "rifleman", 6, 4, { facing: W }),
+    unit(3, 1, "rifleman", 6, 6, { facing: W, hp: 20 }),
+  ]);
+  focus.phase = "attack";
+  focus.attackTurn = 0;
+  const vShot = chooseAction(viewFor(focus, 0), streamFor("focus", 0), "veteran");
+  check("a veteran shoots the wounded enemy first", vShot?.type === "attack" && vShot.targetId === 3, JSON.stringify(vShot));
 }
 
 // ---------------------------------------------------------------------------

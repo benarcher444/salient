@@ -1,6 +1,7 @@
 // The battle page: a canvas and a side panel, both driven by public/build/game.js.
 import type { User } from "../db/schema.js";
 import type { LiveGame } from "../games.js";
+import { BOT_LEVEL_NAME } from "../game/bot.js";
 import { keyHelpHtml } from "../game/keys.js";
 import { icons } from "./icons.js";
 import { esc, jsonScript, layout, type Html } from "./layout.js";
@@ -18,10 +19,14 @@ export function battlePage(user: User, live: LiveGame, seat: number | null): Htm
     seat,
     players: live.players.map((p) => ({ seat: p.seat, name: p.name })),
   };
+  // Against the computer, how well it plays, quietly beside the map's name.
+  const level = live.players.some((p) => p.isBot)
+    ? `<small class="bot-level" title="Computer opponents: ${BOT_LEVEL_NAME[live.game.botLevel]}"> · ${BOT_LEVEL_NAME[live.game.botLevel]}</small>`
+    : "";
   const body = `<div class="battle" id="battle">
   <header class="battle-bar">
     ${user.isGuest ? "" : `<a class="btn btn-ghost btn-icon" href="/" aria-label="Back to your games">${icons.back}</a>`}
-    <div class="battle-title"><strong>${esc(map.name)}</strong><span id="phase-label">Connecting…</span></div>
+    <div class="battle-title"><strong>${esc(map.name)}${level}</strong><span id="phase-label">Connecting…</span></div>
     <div class="scoreboard" id="scoreboard" aria-label="Sides"></div>
     <div class="gold-pill" id="gold" hidden></div>
   </header>

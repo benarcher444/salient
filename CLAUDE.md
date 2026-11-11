@@ -39,7 +39,7 @@ None of its code did.
 | `npm run dev` | Same, restarting on changes to `src/` |
 | `npm run typecheck` | `tsc` over `src/` and `scripts/` |
 | `npm test` | The rules engine, exhaustively (no server, no browser) |
-| `npx tsx scripts/simulate.ts` | Bots against bots, many games in memory: smoke test and balance report |
+| `npx tsx scripts/simulate.ts` | Bots against bots, many games in memory: smoke test and balance report (`--levels=veteran,regular` pits levels against each other) |
 | `npm run test:flow` | Two real browsers play a game, then one plays the computer (server running, seeded) |
 | `npm run test:editor` | The map editor in a real browser: symmetry, tools, undo, autosave, playing a map, deleting it (server running, seeded) |
 | `npm run test:keys` | A game against the computer played with the keyboard alone (server running, seeded) |
@@ -206,6 +206,34 @@ pins the shooter next round, and bots spent ~90 shots on riots' shields in
 never deploys onto a tile it can see an enemy on. A refused bot action falls back to the always-legal one (empty
 orders, end attacks) so humans are never left waiting. `resumeBots()` at
 startup picks up games left waiting on a bot.
+
+**Computer opponents come in three levels: Novice, Regular, Veteran.** The
+owner asked for "novice to veteran, maybe one in between". Chosen per game on
+the new-game form (`games.bot_level`, default `regular`; every bot seat in a
+game plays at it; games from before levels are Regular, which is how they
+played) and shown quietly on the lobby card's bot chips and beside the map's
+name in the battle. `chooseAction(view, random, level)`: every level gets the
+same PlayerView, so the level changes only *decisions*, never what a bot
+knows (pinned: an enemy out of sight changes no level's choice). **Regular is
+the bot as it was, draw for draw**: with the same random stream it makes the
+same choices and uses the same draws, so the simulator's regular-vs-regular
+numbers did not move. Novice buys from a flat mix (engineers and riots
+included), at most two a round, never sends anyone home, wanders (big jitter
+in tile scores, a quarter of its units stand still), and takes a random
+sensible shot a third of the time, now and then holding fire. Veteran values
+a shot by the target's worth (cost, less if unarmed), the share of its
+remaining health and the chance of finishing it, so it focus-fires the
+wounded; scores tiles by the best shot it could take from there against what
+the enemies it sees could do to it there (`Tactics` in `bot.ts`), with a
+little for company; faces the enemy it can best shoot; buys to counter what it
+sees; and wants an engineer only for income away from the enemy. Measured
+with `simulate.ts --levels=...` (levels rotate seats game to game): over 40
+games a map, veteran beat regular 100–44 (16 unfinished at the 60-round cap,
+mostly on Facility: a veteran fight is slower), and regular beat novice
+158–1. Bot against bot is steep: a small edge snowballs, so a Novice that
+never beats a Regular can still be a fair match for a new player. Saving up
+to deploy in pairs, pulling the wounded back and making lone units warier
+were tried and won nothing; deploying in pairs lost games.
 
 **The browser bundle is built in memory by esbuild.** The client is
 TypeScript sharing `src/game`, so it needs bundling; the playbook's "no build

@@ -1,0 +1,1 @@
+ALTER TABLE `games` ADD `bot_level` text DEFAULT 'regular' NOT NULL;
