@@ -24,7 +24,7 @@ UNIT_KINDS.forEach((kind, i) => {
 const view = {
   mapId: map.id, seat: 0, round: 3, phase: "attack", seats: [], gold: 0, units,
   visible: map.terrain.map((_, i) => i), postOwners: map.posts.map(() => null), incomeOwners: map.income.map(() => null),
-  myOrders: null, attackTurn: 1, acted: [], readyShooters: [], burst: null, baseOwners: [], winner: null,
+  myOrders: null, myRoutes: [], attackTurn: 1, acted: [], readyShooters: [], burst: null, baseOwners: [], winner: null,
 };
 const s = { boot: {}, map, view, players: [], connected: true, draft: { moves: [], spawns: [] }, editing: false, selected: { type: "unit", id: 5 }, hover: { x: 7, y: 6 }, log: [], pending: false, aiming: null, replay: null };
 const canvas = document.getElementById("board");

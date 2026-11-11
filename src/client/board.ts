@@ -15,12 +15,15 @@ import { Camera } from "./camera.js";
 import { alpha, readPalette, shade, type Palette } from "./palette.js";
 import {
   canPlan,
+  firstLeg,
+  fullPathTo,
   isMine,
   isMyAttackTurn,
   moveOrderFor,
   mySeat,
   mySpawnTiles,
   reachOf,
+  routePlan,
   targetsOf,
   unitById,
   type ClientState,
@@ -389,12 +392,28 @@ export class Board {
         if (s.hover && reach.cost.has(s.hover.y * s.map.width + s.hover.x)) {
           const path = pathTo(s.map, reach, s.hover);
           if (path && path.length) this.route(u, path, this.pal.path, true);
+        } else if (s.hover && !(s.hover.x === u.x && s.hover.y === u.y)) {
+          // Beyond this round's reach: the route it would take over several
+          // rounds, this round's leg as an ordinary preview.
+          const path = fullPathTo(s, u, s.hover);
+          if (path && path.length) {
+            const leg = firstLeg(s, u, path);
+            if (leg.length) this.route(u, leg, this.pal.path, true);
+            const plan = routePlan(s, u, { unitId: u.id, to: s.hover }, { moves: [{ unitId: u.id, path: leg, facing: 0 }], spawns: [] });
+            if (plan) this.routeAhead(u, plan, this.pal.path, true);
+          }
         }
       }
     }
 
     // Every drafted move: its route and a ghost where it will end up.
     const orders = canPlan(s) ? s.draft : (v.myOrders ?? { moves: [], spawns: [] });
+    // Routes over several rounds: the way on beyond this round's leg, fainter.
+    for (const r of orders.routes ?? []) {
+      const u = unitById(s, r.unitId);
+      const plan = u && routePlan(s, u, r, orders);
+      if (u && plan) this.routeAhead(u, plan, mine, false);
+    }
     for (const m of orders.moves) {
       const u = unitById(s, m.unitId);
       if (!u) continue;
@@ -445,6 +464,42 @@ export class Board {
       g.fillStyle = alpha(hex, 0.25);
       g.fillRect(end.x + 0.08, end.y + 0.08, 0.84, 0.84);
     }
+  }
+
+  /**
+   * The part of a route left for later rounds: a faint dashed line from
+   * where this round's leg ends, a numbered marker where each later round's
+   * leg ends (2 is next round: this one is 1), and a ring on the
+   * destination. `preview` is the hover's, in the preview colour.
+   */
+  private routeAhead(u: Unit, plan: NonNullable<ReturnType<typeof routePlan>>, hex: string, preview: boolean) {
+    const g = this.ctx;
+    const { path, done, ends } = plan;
+    const from = done > 0 ? path[done - 1]! : u;
+    const rest = path.slice(done);
+    if (!rest.length) return;
+    const colour = colourHex(hex);
+    g.strokeStyle = alpha(colour, preview ? 0.7 : 0.55);
+    g.lineWidth = preview ? 0.06 : 0.07;
+    g.setLineDash([0.1, 0.14]);
+    g.beginPath();
+    g.moveTo(from.x + 0.5, from.y + 0.5);
+    for (const p of rest) g.lineTo(p.x + 0.5, p.y + 0.5);
+    g.stroke();
+    g.setLineDash([]);
+    // The destination: a ring, filled faintly.
+    const end = path[path.length - 1]!;
+    g.fillStyle = alpha(colour, 0.14);
+    g.strokeStyle = alpha(colour, 0.75);
+    g.lineWidth = 0.06;
+    g.beginPath();
+    g.arc(end.x + 0.5, end.y + 0.5, 0.36, 0, Math.PI * 2);
+    g.fill();
+    g.stroke();
+    ends.forEach((i, k) => {
+      const p = path[i];
+      if (p) this.label(String(k + 2), p.x + 0.5, p.y + 0.5, alpha(colour, 0.9), 11);
+    });
   }
 
   /** The firing arc as a soft wedge out to the unit's range. */

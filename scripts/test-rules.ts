@@ -1010,6 +1010,42 @@ section("Facings are any whole degree");
 }
 
 // ---------------------------------------------------------------------------
+section("Routes over several rounds (standing destinations)");
+
+{
+  const m = getMap("lockstep");
+  const s = stateOn("lockstep", [unit(1, 0, "rifleman", 2, 6), unit(2, 0, "scout", 2, 8), unit(3, 1, "rifleman", 9, 6)]);
+  const far = { x: 11, y: 0 };
+  const orders0 = { moves: [{ unitId: 1, path: row(6, 3, 4), facing: E }], spawns: [], routes: [{ unitId: 1, to: far }] };
+  const valid = (routes: { unitId: number; to: Point }[]) => codeOf(() => validateOrders(m, s, 0, { moves: [], spawns: [], routes }));
+  check("a route to a far tile is accepted", valid([{ unitId: 1, to: far }]) === "no error");
+  check("someone else's unit can't be given one", valid([{ unitId: 3, to: far }]) === "not_your_unit", valid([{ unitId: 3, to: far }]));
+  check("nor a unit that isn't there", valid([{ unitId: 99, to: far }]) === "no_such_unit");
+  check("the tile must be on the map", valid([{ unitId: 1, to: { x: m.width, y: 0 } }]) === "bad_path");
+  check("one route per unit", valid([{ unitId: 1, to: far }, { unitId: 1, to: { x: 0, y: 0 } }]) === "duplicate_order");
+  check("an unreachable or fogged tile is fine (it's only where the unit is headed)", valid([{ unitId: 2, to: { x: 9, y: 6 } }]) === "no error");
+
+  const after0 = applyAction(s, { type: "orders", seat: 0, orders: orders0 }, roll(0.5)).state;
+  check("accepted routes are kept for the seat", after0.routes[0]!.length === 1 && after0.routes[0]![0]!.to.x === far.x);
+  check("its own view has them", viewFor(after0, 0).myRoutes.length === 1);
+  check("the other seat's view doesn't", viewFor(after0, 1).myRoutes.length === 0 && !JSON.stringify(viewFor(after0, 1)).includes('"routes"'));
+  check("nor a spectator's", viewFor(after0, null).myRoutes.length === 0);
+  const r = applyAction(after0, { type: "orders", seat: 1, orders: { moves: [], spawns: [] } }, roll(0.5)).state;
+  check("the server moves only this round's leg", pos(at(r, 1)) === "4,6", pos(at(r, 1)));
+  check("routes outlive the round's orders", r.routes[0]!.length === 1);
+  check("old-style orders (no routes) leave a seat with none", r.routes[1]!.length === 0);
+  const resubmitted = applyAction(after0, { type: "orders", seat: 0, orders: { moves: [], spawns: [] } }, roll(0.5)).state;
+  check("new orders replace the seat's routes", resubmitted.routes[0]!.length === 0);
+  const dead = { ...after0, units: after0.units.filter((u) => u.id !== 1) };
+  check("a dead unit's route isn't sent", viewFor(dead, 0).myRoutes.length === 0);
+  check("routes change nothing about how moves resolve",
+    JSON.stringify(applyAction(after0, { type: "orders", seat: 1, orders: { moves: [], spawns: [] } }, roll(0.5)).state.units) ===
+    JSON.stringify(resolve(s, [{ unitId: 1, path: row(6, 3, 4) }]).state.units));
+  const unlimited = reachable(m, unit(1, 0, "rifleman", 0, 0), new Set(), Infinity);
+  check("reachable with no budget limit plans a route across the map", unlimited.cost.has((m.height - 1) * m.width + m.width - 1));
+}
+
+// ---------------------------------------------------------------------------
 section("Replay");
 
 {

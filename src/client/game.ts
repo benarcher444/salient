@@ -16,6 +16,8 @@ import {
   defaultFacing,
   draftProblem,
   emptyOrders,
+  firstLeg,
+  fullPathTo,
   goldLeft,
   isMine,
   isMyAttackTurn,
@@ -24,6 +26,7 @@ import {
   mySpawnTiles,
   plannedEnd,
   reachOf,
+  routeFor,
   targetsOf,
   unitAt,
   unitById,
@@ -202,6 +205,8 @@ function onMessage(m: ServerMessage) {
     if (newRound) {
       s.draft = v.myOrders ? structuredClone(v.myOrders) : emptyOrders();
       s.editing = v.myOrders === null;
+      // Units on a route over several rounds start the round with its next leg planned.
+      if (!v.myOrders) continueRoutes(v);
     } else if (v.myOrders && !s.editing) {
       s.draft = structuredClone(v.myOrders);
     } else if (v.myOrders && s.editing && before?.myOrders === null) {
@@ -210,6 +215,7 @@ function onMessage(m: ServerMessage) {
     }
     // Drop orders for units that are gone.
     s.draft.moves = s.draft.moves.filter((mv) => v.units.some((u) => u.id === mv.unitId));
+    s.draft.routes = (s.draft.routes ?? []).filter((r) => v.units.some((u) => u.id === r.unitId));
   }
   if (newRound) s.selected = null;
   if (s.selected?.type === "unit" && !unitById(s, s.selected.id)) s.selected = null;
@@ -494,6 +500,71 @@ function warnBaseLoss(events: GameEvent[]) {
   );
 }
 
+// --- Routes over several rounds ----------------------------------------------------
+// A tile beyond reach becomes a standing destination: this round's move is as
+// far along the way as the unit can walk, and the rest is kept (on the server,
+// with the orders) for the next rounds, each of which starts with the next leg
+// planned. The server never moves a unit by itself; the player still locks in.
+
+function dropRoute(unitId: number) {
+  s.draft.routes = (s.draft.routes ?? []).filter((r) => r.unitId !== unitId);
+}
+
+/**
+ * Send a unit towards a tile over as many rounds as it takes. Plans this
+ * round's leg (facing the way it walks) and keeps the destination if the leg
+ * doesn't get there. false if there is no way there that avoids the enemies
+ * this player can see.
+ */
+function setRoute(unit: Unit, to: Point): boolean {
+  const path = fullPathTo(s, unit, to);
+  if (!path || !path.length) return false;
+  const leg = firstLeg(s, unit, path);
+  const existing = moveOrderFor(s, unit.id);
+  const facing = leg.length ? facingToward(leg.length > 1 ? leg[leg.length - 2]! : unit, leg[leg.length - 1]!) : (existing?.facing ?? unit.facing);
+  if (existing) {
+    existing.path = leg;
+    existing.facing = facing;
+  } else s.draft.moves.push({ unitId: unit.id, path: leg, facing });
+  dropRoute(unit.id);
+  if (leg.length < path.length) (s.draft.routes ??= []).push({ unitId: unit.id, to: { x: to.x, y: to.y } });
+  untangleLegs();
+  return true;
+}
+
+/**
+ * A route's leg is cut short rather than finish on a tile another of your
+ * units will hold (or a deployment): the rules allow one unit per tile. Only
+ * legs of routes give way, never moves the player chose.
+ */
+function untangleLegs() {
+  const mine = s.view?.units.filter((u) => isMine(s, u)) ?? [];
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const r of s.draft.routes ?? []) {
+      const u = unitById(s, r.unitId);
+      const m = u && moveOrderFor(s, u.id);
+      if (!u || !m || !m.path.length) continue;
+      const end = m.path[m.path.length - 1]!;
+      const taken =
+        mine.some((o) => o.id !== u.id && samePoint(plannedEnd(s, o), end)) || s.draft.spawns.some((sp) => samePoint(sp, end));
+      if (!taken) continue;
+      m.path.pop();
+      if (m.path.length) m.facing = facingToward(m.path.length > 1 ? m.path[m.path.length - 2]! : u, m.path[m.path.length - 1]!);
+      changed = true;
+    }
+  }
+}
+
+/** A new planning phase: each unit with a standing destination gets its next leg, or loses the route if it's there or can't get there. */
+function continueRoutes(v: PlayerView) {
+  for (const r of v.myRoutes ?? []) {
+    const u = unitById(s, r.unitId);
+    if (!u || !isMine(s, u) || samePoint(u, r.to)) continue;
+    setRoute(u, r.to);
+  }
+}
+
 // --- Taps on the board -------------------------------------------------------------
 
 /** How a tap came: a mouse, a finger or pen, or Enter on the keyboard cursor. */
@@ -549,7 +620,15 @@ function planningTap(p: Point, u: Unit | undefined, input: Input) {
         existing.path = path;
         existing.facing = facing;
       } else s.draft.moves.push({ unitId: selUnit.id, path, facing });
+      // A move within reach replaces any route the unit had.
+      dropRoute(selUnit.id);
       // It then turns to follow the pointer (a right click, or on a touch screen the next tap, sets it).
+      if (input !== "key") startAim();
+      return;
+    }
+    // Further than it can go this round: a route over several rounds, if
+    // there's a way. The first leg is this round's move, aimed the same way.
+    if (!path && setRoute(selUnit, p)) {
       if (input !== "key") startAim();
       return;
     }
@@ -624,6 +703,11 @@ panel.addEventListener("click", (e) => {
       break;
     case "clear-order":
       s.draft.moves = s.draft.moves.filter((m) => m.unitId !== Number(el.dataset.unit));
+      dropRoute(Number(el.dataset.unit));
+      break;
+    case "cancel-route":
+      // This round's leg stays as an ordinary move; only the rest is dropped.
+      dropRoute(Number(el.dataset.unit));
       break;
     case "cancel-spawn":
       if (sel?.type === "spawn") s.draft.spawns.splice(sel.index, 1);
@@ -992,6 +1076,7 @@ function onKey(e: KeyboardEvent): boolean {
       }
       if (sel?.type === "unit") {
         s.draft.moves = s.draft.moves.filter((m) => m.unitId !== sel.id);
+        dropRoute(sel.id);
         return true;
       }
       return false;
@@ -1070,6 +1155,8 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
     return u ? targetsOf(s, u).map((t) => t.id) : [];
   },
   readyShooters: () => s.view?.readyShooters ?? [],
+  draft: () => s.view && { moves: s.draft.moves.map((m) => ({ unitId: m.unitId, steps: m.path.length, end: m.path[m.path.length - 1] ?? null })), routes: s.draft.routes ?? [], myRoutes: s.view.myRoutes },
+  mapSize: () => ({ width: s.map.width, height: s.map.height }),
   log: () => s.log.map((l) => l.html),
   phase: () => s.view && { phase: s.view.phase, round: s.view.round, attackTurn: s.view.attackTurn, ready: s.view.seats.map((p) => p.ready) },
   busy: () => board.anim.animating,

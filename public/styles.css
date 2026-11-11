@@ -428,6 +428,7 @@ body.bare { height: 100dvh; overflow: hidden; }
 .hp-bar .warn { background: var(--warn-fill); }
 .hp-bar .danger { background: var(--danger); }
 .order-line { font-weight: 600; font-size: 0.9rem; }
+.order-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
 .facing-row { display: flex; align-items: center; gap: 12px; }
 .compass { display: grid; grid-template-columns: repeat(3, 34px); grid-template-rows: repeat(3, 34px); gap: 3px; }
 .compass button { border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-muted); font: inherit; font-size: 1rem; cursor: pointer; padding: 0; }

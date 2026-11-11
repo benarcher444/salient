@@ -124,6 +124,15 @@ await page.keyboard.press("Delete");
 check("Delete clears it", (await page.textContent("#panel"))?.includes("Holding position") ?? false);
 await page.keyboard.press("Enter");
 check("Enter again puts it back", (await page.textContent("#panel"))?.includes("Moving") ?? false);
+// A tile further than one round's move: a route over several rounds.
+await cursorTo(page, { x: 12, y: 8 });
+await page.keyboard.press("Enter");
+check("Enter on a far tile sets a route over several rounds", /Moving \d+ steps? · route: \d+ rounds to go/.test((await page.textContent("#panel")) ?? ""), ((await page.textContent("#panel")) ?? "").slice(0, 160));
+await page.keyboard.press("Delete");
+const cleared = (await page.textContent("#panel")) ?? "";
+check("Delete clears the move and the route", cleared.includes("Holding position") && !cleared.includes("route:"));
+await cursorTo(page, dest);
+await page.keyboard.press("Enter");
 await page.keyboard.press("Escape");
 check("Esc deselects", !((await page.textContent("#panel"))?.includes("Moving") ?? true));
 

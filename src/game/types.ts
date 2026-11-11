@@ -104,9 +104,22 @@ export interface SpawnOrder {
   facing: Facing;
 }
 
+/**
+ * A standing destination beyond this round's move: where the unit is headed
+ * over several rounds. The server only keeps it for the player (it never
+ * moves a unit by itself); each planning phase the browser plans the next
+ * leg as an ordinary MoveOrder.
+ */
+export interface RouteOrder {
+  unitId: number;
+  to: Point;
+}
+
 export interface Orders {
   moves: MoveOrder[];
   spawns: SpawnOrder[];
+  /** Units heading further than one round's move. Missing in older logs: none. */
+  routes?: RouteOrder[];
 }
 
 export type Phase = "planning" | "attack" | "over";
@@ -136,6 +149,12 @@ export interface GameState {
   baseCapture: ({ seat: Seat; rounds: number } | null)[];
   /** Planning phase: each seat's submitted orders, or null while still planning. */
   orders: (Orders | null)[];
+  /**
+   * Each seat's standing destinations, from its last accepted orders. Kept
+   * from round to round (orders are not), so the next leg can be planned
+   * after a reload or on another device. Private to the seat, like orders.
+   */
+  routes: RouteOrder[][];
   /** Attack phase: whose activation it is, and which units have used theirs. */
   attackTurn: Seat | null;
   actedUnitIds: number[];

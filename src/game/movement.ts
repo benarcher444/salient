@@ -14,14 +14,14 @@ export interface Reach {
 }
 
 /**
- * Every tile the unit can reach within its budget. `blocked` holds tile
+ * Every tile the unit can reach within its budget (this round's, unless
+ * given: Infinity plans a route over several rounds). `blocked` holds tile
  * indexes it may not walk through (enemies the player can see): a route may
  * end on one (if the enemy moves off, you take the tile; if not, you stop in
  * front of it) but never pass it. Friendly units can be walked through;
  * whether a tile is a legal place to stop is the caller's question.
  */
-export function reachable(map: MapDef, unit: Unit, blocked: ReadonlySet<number>): Reach {
-  const budget = moveBudget(unit);
+export function reachable(map: MapDef, unit: Unit, blocked: ReadonlySet<number>, budget = moveBudget(unit)): Reach {
   const start = unit.y * map.width + unit.x;
   const cost = new Map<number, number>([[start, 0]]);
   const from = new Map<number, number>();

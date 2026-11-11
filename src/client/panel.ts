@@ -16,6 +16,8 @@ import {
   isMyAttackTurn,
   moveOrderFor,
   mySeat,
+  routeFor,
+  routePlan,
   targetsOf,
   baseWarning,
   unitById,
@@ -219,15 +221,19 @@ function planningBlock(s: ClientState): string {
     if (u && isMine(s, u)) {
       const order = moveOrderFor(s, u.id);
       const facing = order?.facing ?? u.facing;
-      const what = order?.path.length ? `Moving ${order.path.length} step${order.path.length === 1 ? "" : "s"}` : order ? "Turning on the spot" : "Holding position";
+      const route = routeFor(s, u.id);
+      const plan = route ? routePlan(s, u, route) : null;
+      let what = order?.path.length ? `Moving ${order.path.length} step${order.path.length === 1 ? "" : "s"}` : order ? "Turning on the spot" : "Holding position";
+      // A route over several rounds: how many rounds it takes, this one included.
+      if (route) what += plan ? ` · route: ${plan.rounds} round${plan.rounds === 1 ? "" : "s"} to go` : " · route: no way through for now";
       const firedNote = u.fired ? `<p class="small braced-note">Fired last round: it can turn this round, but not move.</p>` : "";
       parts.push(`<div class="panel-section unit-sheet" ${seatStyle(u.seat)}>
   ${unitHeader(s, u)}
   <p class="order-line">${what}, facing ${facingName(facing)} (${facing}°).</p>
   ${firedNote}
   <div class="facing-row"><span class="faint small">Face</span>${compass(s, facing)}</div>
-  <p class="faint small">${s.aiming ? AIM_HINT : "Click a highlighted tile to move there; it then turns to follow the pointer. Right-click to set its facing."}</p>
-  ${order ? `<button class="btn btn-ghost btn-sm" data-action="clear-order" data-unit="${u.id}" type="button">Clear order</button>` : ""}
+  <p class="faint small">${s.aiming ? AIM_HINT : "Click a highlighted tile to move there, or a tile further off to head there over several rounds; it then turns to follow the pointer. Right-click to set its facing."}</p>
+  ${order || route ? `<div class="order-buttons">${order ? `<button class="btn btn-ghost btn-sm" data-action="clear-order" data-unit="${u.id}" type="button">Clear order</button>` : ""}${route ? `<button class="btn btn-ghost btn-sm" data-action="cancel-route" data-unit="${u.id}" type="button">Cancel route</button>` : ""}</div>` : ""}
 </div>`);
     }
   } else if (sel?.type === "spawnTile") {

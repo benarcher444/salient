@@ -35,8 +35,8 @@ unit shows which way it faces.
 
 ## Controls
 
-Tap or click: a unit to select it, a highlighted tile to send it there, a base
-tile to deploy. Or play entirely from the keyboard:
+Tap or click: a unit to select it, a highlighted tile to send it there (or a
+tile further off to send it there over several rounds), a base tile to deploy. Or play entirely from the keyboard:
 
 | Keys | |
 |---|---|
