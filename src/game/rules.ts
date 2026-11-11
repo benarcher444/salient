@@ -176,6 +176,10 @@ export function validateOrders(map: MapDef, state: GameState, seat: Seat, orders
     // A teammate standing there now is in the way even if it is ordered off:
     // kept simple, so a plan never depends on a move working out.
     if (state.units.some((u) => u.seat === seat && u.x === s.x && u.y === s.y)) throw new RuleError("spawn_tile_occupied");
+    // An enemy beside a base tile stops deployments there (rules revision 5).
+    // Only enemies this side can see: an unseen one makes it fail, refunded,
+    // at resolution, so a refusal never gives one away.
+    if (baseContested(map, state, seat, s, knownTo(map, state, seat))) throw new RuleError("spawn_contested");
     spawnTilesUsed.add(k);
     cost += UNITS[s.kind].cost;
   }
@@ -189,7 +193,7 @@ function maybeResolvePlanning(map: MapDef, state: GameState, events: GameEvent[]
   // a deployment planned there fails (and is refunded). The other way round,
   // a side could block any tile of its base by buying a unit onto it.
   resolveMoves(map, state, events);
-  resolveSpawns(state, events);
+  resolveSpawns(map, state, events);
   // Last round's shooters have sat out this move; they may move again next time.
   for (const u of state.units) u.fired = false;
   state.phase = "attack";
@@ -200,7 +204,18 @@ function maybeResolvePlanning(map: MapDef, state: GameState, events: GameEvent[]
   if (state.attackTurn === null) endRound(map, state, events);
 }
 
-function resolveSpawns(state: GameState, events: GameEvent[]) {
+/**
+ * Is this tile a base tile with an enemy of `seat` on one of the 8 tiles
+ * round it? Then nothing may deploy there (rules revision 5, the owner's
+ * rule: a base under the enemy's nose can't pour out fresh units).
+ */
+export function baseContested(map: MapDef, state: Pick<GameState, "seatCount">, seat: Seat, p: Point, units: readonly Unit[]): boolean {
+  if (RULES.rulesRevision < 5) return false;
+  if (!baseTiles(map, state.seatCount).some((t) => t.x === p.x && t.y === p.y)) return false;
+  return units.some((u) => u.seat !== seat && !(u.x === p.x && u.y === p.y) && Math.max(Math.abs(u.x - p.x), Math.abs(u.y - p.y)) <= 1);
+}
+
+function resolveSpawns(map: MapDef, state: GameState, events: GameEvent[]) {
   for (const seatState of state.seats) {
     const orders = state.orders[seatState.seat];
     if (!orders || seatState.eliminated) continue;
@@ -209,7 +224,7 @@ function resolveSpawns(state: GameState, events: GameEvent[]) {
       // Checked again at resolution: an enemy may have been standing on the
       // tile all along, unseen, or have just walked onto it. Nothing is
       // charged for a failed deployment.
-      const blocked = state.units.some((u) => u.x === s.x && u.y === s.y);
+      const blocked = state.units.some((u) => u.x === s.x && u.y === s.y) || baseContested(map, state, seatState.seat, s, state.units);
       if (blocked || cost > seatState.gold) {
         events.push({ type: "spawnFailed", seat: seatState.seat, kind: s.kind, x: s.x, y: s.y, refund: cost });
         continue;

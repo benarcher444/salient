@@ -170,6 +170,16 @@ is in the way, any other unit there isn't (`lineSpots`/`blocksAt` in
 watched a shot slip diagonally past a riot's corner to the healer behind it.
 Under heal-at-base, a unit heals beside its base even when hit that round.
 
+**No deploying onto a base tile with an enemy beside it** (rules revision
+5, the owner's rule). `baseContested` in `rules.ts`: any of the 8 tiles
+round it. Validation refuses it only for enemies the side can see
+(`spawn_contested`); an unseen one, or one that walks up this round (moves
+resolve first), makes the deployment fail at resolution, refunded. The
+browser leaves such tiles out of `mySpawnTiles` and the bots skip them.
+Command posts aren't affected. A side with no units whose base tiles are
+all contested isn't out (the owner kept the rule: out means no base tiles
+and no units); taking the tiles finishes it.
+
 **Moving onto a teammate's square: Shift+click.** With a unit selected, a
 plain click on a teammate selects it; Shift+click orders the selected unit
 onto its square (the owner's choice), and the teammate must move off before

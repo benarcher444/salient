@@ -5,7 +5,7 @@
 import { facingToward, samePoint } from "../game/grid.js";
 import type { Tuning } from "../game/tuning.js";
 import { moveBudget, pathTo, reachable, type Reach } from "../game/movement.js";
-import { targetsFor, validateOrders } from "../game/rules.js";
+import { baseContested, targetsFor, validateOrders } from "../game/rules.js";
 import { UNITS } from "../game/units.js";
 import { spawnTiles, visibleTiles } from "../game/visibility.js";
 import { RuleError, ERROR_TEXT, type Facing, type GameState, type MapDef, type MoveOrder, type Orders, type Point, type RouteOrder, type Seat, type Unit } from "../game/types.js";
@@ -199,7 +199,11 @@ export const goldLeft = (s: ClientState) =>
 export function mySpawnTiles(s: ClientState): Point[] {
   const seat = mySeat(s);
   if (seat === null || !s.view) return [];
-  return spawnTiles(s.map, { postOwners: s.view.postOwners, baseOwners: s.view.baseOwners, seatCount: s.view.seats.length }, seat);
+  const v = s.view;
+  // A base tile with an enemy you can see right beside it can't take a deployment.
+  return spawnTiles(s.map, { postOwners: v.postOwners, baseOwners: v.baseOwners, seatCount: v.seats.length }, seat).filter(
+    (t) => !baseContested(s.map, { seatCount: v.seats.length }, seat, t, v.units),
+  );
 }
 
 /** A spawn's default facing: towards the middle of the map, where the fight is. */

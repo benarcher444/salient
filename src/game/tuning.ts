@@ -284,8 +284,10 @@ export const TUNING_VERSION = 2;
  *   4: a healer's and an officer's help needs a clear line (no wall, window
  *      or obstacle between); a shield bearer at the corner of a diagonal
  *      shot is in the way; under heal-at-base, units heal even when hit.
+ *   5: no deploying onto a base tile with an enemy on one of the 8 tiles
+ *      round it.
  */
-export const RULES_REVISION = 4;
+export const RULES_REVISION = 5;
 
 /** Validate tuning data (from the files, or a game's stored snapshot). Throws TuningError naming the file and field. */
 export function checkTuning(raw: { rules: unknown; units: Record<string, unknown> }): Tuning {

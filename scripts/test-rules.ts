@@ -405,14 +405,26 @@ section("Moves resolve before deployments");
   board("move-then-deploy");
   const tiles = baseTiles(getMap("move-then-deploy"), 2);
   const t = tiles.find((p) => p.home === 1)!;
-  const s = stateOn("move-then-deploy", [unit(1, 0, "rifleman", t.x - 1, t.y), unit(2, 1, "rifleman", 2, 2)]);
-  const o0 = { moves: [{ unitId: 1, path: [{ x: t.x, y: t.y }], facing: E }], spawns: [] };
+  // Two tiles off, so the deployment isn't refused for an enemy beside the tile.
+  const s = stateOn("move-then-deploy", [unit(1, 0, "rifleman", t.x - 2, t.y), unit(2, 1, "rifleman", 2, 2)]);
+  const o0 = { moves: [{ unitId: 1, path: [{ x: t.x - 1, y: t.y }, { x: t.x, y: t.y }], facing: E }], spawns: [] };
   const o1 = { moves: [], spawns: [{ kind: "rifleman" as UnitKind, x: t.x, y: t.y, facing: W }] };
   let r = applyAction(s, { type: "orders", seat: 0, orders: o0 }, roll(0.5));
   r = applyAction(r.state, { type: "orders", seat: 1, orders: o1 }, roll(0.5));
   check("a unit stepping onto a base tile gets there before a deployment onto it", pos(at(r.state, 1)) === `${t.x},${t.y}`, pos(at(r.state, 1)));
   const failed = r.events.find((e) => e.type === "spawnFailed");
   check("so the deployment fails, refunded", failed?.type === "spawnFailed" && r.state.seats[1]!.gold === RULES.startGold + RULES.baseIncome, `${r.state.seats[1]!.gold}`);
+
+  // Rules revision 5: no deploying onto a base tile with an enemy beside it.
+  const beside = stateOn("move-then-deploy", [unit(1, 0, "rifleman", t.x - 1, t.y), unit(2, 1, "rifleman", 2, 2)]);
+  check("an enemy you can see beside a base tile stops a deployment there", codeOf(() => applyAction(beside, { type: "orders", seat: 1, orders: o1 }, roll(0.5))) === "spawn_contested");
+  const old = withTuning({ ...FILE_TUNING, rules: { ...FILE_TUNING.rules, rulesRevision: 4 } }, () => codeOf(() => applyAction(beside, { type: "orders", seat: 1, orders: o1 }, roll(0.5))));
+  check("(not in games from before rules revision 5)", old === "no error", old);
+  // One that walks up beside it this round: the deployment fails at resolution, refunded.
+  const far = stateOn("move-then-deploy", [unit(1, 0, "rifleman", t.x - 3, t.y), unit(2, 1, "rifleman", 2, 2)]);
+  let w = applyAction(far, { type: "orders", seat: 1, orders: o1 }, roll(0.5));
+  w = applyAction(w.state, { type: "orders", seat: 0, orders: { moves: [{ unitId: 1, path: [{ x: t.x - 2, y: t.y }, { x: t.x - 1, y: t.y }], facing: E }], spawns: [] } }, roll(0.5));
+  check("an enemy walking up beside it this round makes the deployment fail, refunded", w.events.some((e) => e.type === "spawnFailed") && !w.state.units.some((u) => u.seat === 1 && u.x === t.x && u.y === t.y));
 }
 {
   board("onto-teammate");

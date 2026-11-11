@@ -240,6 +240,7 @@ export type RuleErrorCode =
   | "duplicate_destination"
   | "bad_spawn_tile"
   | "spawn_tile_occupied"
+  | "spawn_contested"
   | "not_enough_gold"
   | "already_acted"
   | "cannot_shoot"
@@ -259,6 +260,7 @@ export const ERROR_TEXT: Record<RuleErrorCode, string> = {
   duplicate_destination: "Two of your units are heading for the same tile.",
   bad_spawn_tile: "Units can only be deployed on base tiles or command posts you hold.",
   spawn_tile_occupied: "Something is already standing there.",
+  spawn_contested: "An enemy is right beside that base tile: you can't deploy there while it stays.",
   not_enough_gold: "You can't afford that.",
   already_acted: "That unit has already acted this round.",
   cannot_shoot: "That unit can't hit that target from here.",

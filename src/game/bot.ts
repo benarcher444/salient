@@ -39,7 +39,7 @@ import { RULES } from "./constants.js";
 import { DIRS, TERRAIN, distance, edgeAt, facingToward, inBounds, stepCost, stepOpen, terrainAt } from "./grid.js";
 import { getMap } from "./maps.js";
 import { pathTo, reachable } from "./movement.js";
-import { targetsFor, validateOrders } from "./rules.js";
+import { baseContested, targetsFor, validateOrders } from "./rules.js";
 import { UNITS, UNIT_KINDS, hasTrait } from "./units.js";
 import { baseTiles, spawnTiles } from "./visibility.js";
 import { stateFromView, type PlayerView } from "./view.js";
@@ -410,7 +410,7 @@ function planSpawns(view: PlayerView, map: MapDef, mine: Unit[], claimed: Set<st
   const enemies = view.units.filter((u) => u.seat !== seat);
   const urgency = (p: Point) => (enemies.length && nearestEnemy(p, enemies) <= DEFEND_RADIUS ? nearestEnemy(p, enemies) - 100 : distance(p, centre));
   const tiles = spawnTiles(map, { postOwners: view.postOwners, baseOwners: view.baseOwners, seatCount: view.seats.length }, seat)
-    .filter((t) => !taken(t))
+    .filter((t) => !taken(t) && !baseContested(map, { seatCount: view.seats.length }, seat, t, view.units))
     .sort((a, b) => urgency(a) - urgency(b));
   const kinds = new Map<UnitKind, number>();
   for (const u of mine) kinds.set(u.kind, (kinds.get(u.kind) ?? 0) + 1);
