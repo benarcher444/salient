@@ -219,6 +219,22 @@ share through a "pen" and the builder replays it rotated (half turn for two
 seats, quarter turns for four). The rules test checks each built-in map is
 symmetric, its bases equal, and every site reachable.
 
+**Bots measure distance by walking, not as the crow flies.** `walkDistance`
+in `bot.ts` (a field per goal tile, filled out from the goal through
+`stepOpen`/`stepCost`, cached since walls never change) drives both choosing
+a goal and scoring tiles. With straight-line distance a unit on an indoor map
+walked up to the wall nearest its goal and stayed there: on the Warren four
+bots fought 150 rounds without reaching a base, and the Facility stalled half
+its games. Now every built-in map finishes (Facility about 39 rounds, Warren
+four-player about 85).
+
+**The Warren** (four players, indoor, the owner's request for a second
+corridor map): a ring corridor round the edge joins each base to the next,
+with two one-door bulkheads per stretch; four one-tile spokes, each with a
+bulkhead, are the only ways into the central hall. Base rooms are open on
+the ring side and double-doored to their armoury on purpose: with a one-tile
+door each, fresh deployments held every entrance.
+
 **Bots decide from a PlayerView only.** `src/game/bot.ts` gets exactly what a
 human in that seat gets, so it cannot cheat. It lives in `src/game` so the
 simulator can run it without a server. On the server, `driveBots()` runs after

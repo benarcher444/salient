@@ -385,7 +385,94 @@ const facility = (() => {
   return b.build();
 })();
 
-export const MAPS: readonly MapDef[] = [crossroads, riverside, fourCorners, facility];
+const warren = (() => {
+  const b = new MapBuilder(
+    {
+      id: "warren",
+      name: "Warren",
+      blurb: "Four players in a bunker. A ring of corridors joins each base to the next; four spokes lead to the central hall.",
+      width: 25,
+      height: 25,
+      seats: 4,
+    },
+    "floor",
+  );
+  // One quarter, drawn four times a quarter turn apart. Seat 0's share:
+  //   base room 0-4 x 0-4; the ring corridor along the north edge, x 5-19,
+  //   rows 0-1, from this base to the next one's back door; ops room 5-9 x 2-6
+  //   (command post); storeroom 10-11 x 2-8 (income, its only door on the
+  //   corridor); armoury 2-4 x 5-9; lobby 5-8 x 7-11; closet 2-4 x 10-11; and
+  //   the west spoke, row 12 x 2-8, from the ring (the west stretch is the
+  //   next seat's) to the central hall 9-15 x 9-15. Column 12, rows 2-8, is
+  //   the next seat's spoke.
+  // Two passes, as in the Facility: every room is walled first, then the
+  // openings are cut, so a rotated twin's walls never close a door.
+  b.pen().building(9, 9, 7, 7); // the central hall
+  b.symmetric((p) => {
+    p.building(0, 0, 5, 5); // base room
+    p.building(5, 0, 15, 2); // the ring corridor's north stretch
+    p.building(5, 2, 5, 5); // ops room
+    p.building(10, 2, 2, 7); // storeroom
+    p.building(2, 5, 3, 5); // armoury
+    p.building(5, 7, 4, 5); // lobby
+    p.building(2, 10, 3, 2); // closet
+    p.building(2, 12, 7, 1); // the west spoke
+    p.rect(9, 7, 1, 2, "rock"); // a solid pillar between ops, lobby and hall
+  });
+  b.symmetric((p) => {
+    p.base(1, 1, 2, 2);
+    // Base room: open on the ring (no wall at all), a double door to the
+    // armoury, a window into ops. Bases are wide open on purpose: with a
+    // one-tile door each, fresh deployments held every entrance and four
+    // bots fought 150 rounds without taking a single base tile.
+    p.edge(4, 0, "e", null);
+    p.edge(4, 1, "e", null);
+    p.edge(2, 4, "s", "door");
+    p.edge(3, 4, "s", "door");
+    p.edge(4, 3, "e", "window");
+    // The ring corridor: two bulkheads, each with one doorway, and at its far
+    // end the next base, open the corridor's full width.
+    p.vwall(9, 0, 2);
+    p.edge(9, 1, "w", "door");
+    p.vwall(15, 0, 2);
+    p.edge(15, 0, "w", "door");
+    p.edge(19, 0, "e", null);
+    p.edge(19, 1, "e", null);
+    // Ops: to the ring and the lobby, a window over the corridor.
+    p.edge(7, 2, "n", "door");
+    p.edge(7, 6, "s", "door");
+    p.edge(6, 2, "n", "window");
+    // Storeroom: one door, on the ring; a window into ops.
+    p.edge(11, 2, "n", "door");
+    p.edge(10, 6, "w", "window");
+    // Armoury: out to the ring's west stretch and into the lobby.
+    p.edge(2, 7, "w", "door");
+    p.edge(4, 8, "e", "door");
+    // Lobby and closet open onto the spoke.
+    p.edge(6, 11, "s", "door");
+    p.edge(3, 11, "s", "door");
+    p.edge(4, 10, "e", "window");
+    // The spoke: from the ring, through a bulkhead, into the hall.
+    p.edge(2, 12, "w", "door");
+    p.vwall(5, 12, 1);
+    p.edge(5, 12, "w", "door");
+    p.edge(8, 12, "e", "door");
+
+    p.post(7, 4);
+    p.income(10, 5, 25);
+
+    p.tile(10, 10, "crate");
+    p.tile(6, 4, "crate");
+    p.tile(7, 9, "crate");
+    p.tile(3, 6, "crate");
+    p.tile(17, 0, "crate");
+    p.tile(11, 7, "crate");
+  });
+  b.pen().post(12, 12);
+  return b.build();
+})();
+
+export const MAPS: readonly MapDef[] = [crossroads, riverside, fourCorners, facility, warren];
 
 // Tests register small purpose-built maps here, so the rules can be exercised
 // on a board where every wall is placed for the case being tested.

@@ -36,7 +36,7 @@
 //              simulator, and none of them won more games.)
 import { blastTiles, damageRange, isArmed, previewShot } from "./combat.js";
 import { RULES } from "./constants.js";
-import { DIRS, TERRAIN, distance, edgeAt, facingToward, inBounds, terrainAt } from "./grid.js";
+import { DIRS, TERRAIN, distance, edgeAt, facingToward, inBounds, stepCost, stepOpen, terrainAt } from "./grid.js";
 import { getMap } from "./maps.js";
 import { pathTo, reachable } from "./movement.js";
 import { targetsFor, validateOrders } from "./rules.js";
@@ -172,7 +172,7 @@ export function planOrders(view: PlayerView, random: () => number, level: BotLev
   // must claim their tile first, so nobody plans to land on them.
   const movers = mine.filter((u) => !capturingIds.has(u.id));
   for (const u of movers) {
-    const goal = defending.get(u.id) ?? goalFor(u, { posts, income, lostBase, enemyBaseTiles }, enemies, enemyBase, claimed);
+    const goal = defending.get(u.id) ?? goalFor(map, u, { posts, income, lostBase, enemyBaseTiles }, enemies, enemyBase, claimed);
     // A unit that fired last round may only turn. A novice's sometimes just stays.
     if (u.fired || (level === "novice" && random() < NOVICE.holdStill)) {
       claimed.add(k(u));
@@ -235,18 +235,60 @@ interface Targets {
   enemyBaseTiles: Point[];
 }
 
-function goalFor(u: Unit, t: Targets, enemies: Unit[], enemyBase: Point, claimed: Set<string>): Point {
+/**
+ * Walking distance to `goal`, in tiles, round walls and through doors (units
+ * ignored: they move). Bots used straight-line distance, and on an indoor map
+ * a unit would walk up to the wall nearest its goal and stay there, every
+ * step towards the door looking like a step back: four bots on the Warren
+ * fought 150 rounds without reaching a base. One field per goal tile, filled
+ * outwards from the goal and cached (the walls never change).
+ */
+const walkFields = new Map<string, Float64Array>();
+function walkDistance(map: MapDef, from: Point, goal: Point): number {
+  const key = `${map.id}:${goal.x},${goal.y}`;
+  let field = walkFields.get(key);
+  if (!field) {
+    if (walkFields.size > 4000) walkFields.clear();
+    field = new Float64Array(map.width * map.height).fill(Infinity);
+    const start = goal.y * map.width + goal.x;
+    field[start] = 0;
+    const open = [start];
+    while (open.length) {
+      let best = 0;
+      for (let i = 1; i < open.length; i++) if (field[open[i]!]! < field[open[best]!]!) best = i;
+      const cur = open.splice(best, 1)[0]!;
+      const p = { x: cur % map.width, y: Math.floor(cur / map.width) };
+      for (const d of DIRS) {
+        const n = { x: p.x + d.x, y: p.y + d.y };
+        if (!inBounds(map, n.x, n.y) || !stepOpen(map, n, p)) continue;
+        const ni = n.y * map.width + n.x;
+        const c = field[cur]! + stepCost(map, n, p) / 2;
+        if (c < field[ni]!) {
+          if (field[ni] === Infinity) open.push(ni);
+          field[ni] = c;
+        }
+      }
+    }
+    walkFields.set(key, field);
+  }
+  const d = field[from.y * map.width + from.x]!;
+  // Cut off from it (a tile walled in, say): far, but still ordered by the crow's flight.
+  return Number.isFinite(d) ? d : 1000 + distance(from, goal);
+}
+
+function goalFor(map: MapDef, u: Unit, t: Targets, enemies: Unit[], enemyBase: Point, claimed: Set<string>): Point {
+  const far = (p: Point) => walkDistance(map, u, p);
   const free = (p: Point) => !claimed.has(`${p.x},${p.y}`);
   if (hasTrait(u.kind, "engineer")) {
-    const site = t.income.filter(free).sort((a, b) => distance(u, a) - distance(u, b))[0];
+    const site = t.income.filter(free).sort((a, b) => far(a) - far(b))[0];
     if (site) return site;
   }
   // Weighted by distance less a bonus: retaking our own base matters most,
   // then the enemy's base (it wins the game), then command posts.
   const options: [Point, number][] = [
-    ...t.lostBase.filter(free).map((p): [Point, number] => [p, distance(u, p) - 6]),
-    ...t.enemyBaseTiles.filter(free).map((p): [Point, number] => [p, distance(u, p) - 3]),
-    ...t.posts.filter(free).map((p): [Point, number] => [p, distance(u, p)]),
+    ...t.lostBase.filter(free).map((p): [Point, number] => [p, far(p) - 6]),
+    ...t.enemyBaseTiles.filter(free).map((p): [Point, number] => [p, far(p) - 3]),
+    ...t.posts.filter(free).map((p): [Point, number] => [p, far(p)]),
   ];
   options.sort((a, b) => a[1] - b[1]);
   return options[0]?.[0] ?? [...enemies].sort((a, b) => distance(u, a) - distance(u, b))[0] ?? enemyBase;
@@ -254,7 +296,7 @@ function goalFor(u: Unit, t: Targets, enemies: Unit[], enemyBase: Point, claimed
 
 /** Higher is better: close to the goal, in cover, not standing in the open next to enemies. */
 function scoreTile(map: MapDef, p: Point, goal: Point, enemies: Unit[]): number {
-  let score = -distance(p, goal);
+  let score = -walkDistance(map, p, goal);
   // Standing on the goal itself is what takes (or holds) it: worth more than cover.
   if (p.x === goal.x && p.y === goal.y) score += 2.5;
   score += coverAround(map, p) * 0.9;
