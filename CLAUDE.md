@@ -295,9 +295,9 @@ played) and shown quietly on the lobby card's bot chips and beside the map's
 name in the battle. `chooseAction(view, random, level)`: every level gets the
 same PlayerView, so the level changes only *decisions*, never what a bot
 knows (pinned: an enemy out of sight changes no level's choice). **Regular is
-the bot as it was, draw for draw**: with the same random stream it makes the
-same choices and uses the same draws, so the simulator's regular-vs-regular
-numbers did not move. Novice buys from a flat mix (engineers and riots
+the bot as it was, draw for draw**: with the same random stream it made the
+same choices and used the same draws (until the class roles below changed
+its moves). Novice buys from a flat mix (engineers and riots
 included), at most two a round, never sends anyone home, wanders (big jitter
 in tile scores, a quarter of its units stand still), and takes a random
 sensible shot a third of the time, now and then holding fire. Veteran values
@@ -312,8 +312,34 @@ games a map, veteran beat regular 100–44 (16 unfinished at the 60-round cap,
 mostly on Facility: a veteran fight is slower), and regular beat novice
 158–1. Bot against bot is steep: a small edge snowballs, so a Novice that
 never beats a Regular can still be a fair match for a new player. Saving up
-to deploy in pairs, pulling the wounded back and making lone units warier
-were tried and won nothing; deploying in pairs lost games.
+to deploy in pairs and making lone units warier were tried and won nothing;
+deploying in pairs lost games.
+
+**Bots play each class to its power** (`src/game/bot-roles.ts`, Regular and
+Veteran; the owner's ask after bqu7z9, where the bots played every class like
+a rifleman: their snipers led and lived 3 rounds, 23 of 25 engineers died,
+and under heal-at-base they healed 527 health to the owner's 1,467). `Roles`
+adds to each tile's score, may change a unit's goal and may set its facing:
+a riot stands on a seen enemy's line of fire at a friend, shield towards it;
+a commando heads for the tile behind the most valuable enemy within reach,
+keeps out of stealth range unless at a back, and faces its prey (`danger` is
+0 for a stealthy unit no enemy is near); snipers, heavies, officers, healers
+and engineers keep behind the front line (`BEHIND`); an officer stays among
+the friends its order reaches; a shotgun closes on a side or back; a scout
+keeps its distance; an engineer avoids fire. A commando holds fire at a face
+it won't kill while it could reach a back next round (firing pins it). The
+badly hurt go to a healer, or under heal-at-base beside a base tile or post
+they hold, when it's within 8 tiles. Measured with `simulate.ts
+--levels=veteran,veteran-plain` (`-plain` is a level without roles; `--seed=`
+runs a different batch, so batches can run side by side) and `class-stats.ts
+--plain`: Facility 13-7 for roles (12-8 under both house rules), Crossroads
+and Riverside about even, the Warren under house rules even. Per class:
+engineers live 12 rounds (were 7), healers heal twice as much, a commando's
+shots from behind went from 7% to 15%. Things that *lost* games and were
+taken out: the hurt keeping out of fire (too timid to race for bases),
+engineers waiting behind the others, and not buying beyond what income keeps
+under upkeep (it never bound: gold can't go below 0, so a unit you can pay
+for is worth having). Pinned in `test-rules.ts`.
 
 **The browser bundle is built in memory by esbuild.** The client is
 TypeScript sharing `src/game`, so it needs bundling; the playbook's "no build

@@ -1,8 +1,10 @@
 // What each class actually does in whole bot games: gold spent on it, damage
 // dealt to enemies (direct and blast) per 100 gold, kills, damage to its own
 // side, damage soaked, and how many rounds it lives.
-//   npx tsx scripts/class-stats.ts [--games=20] [--level=veteran] [--maps=all]
+//   npx tsx scripts/class-stats.ts [--games=20] [--level=veteran] [--maps=all] [--plain]
+// --plain: bots without their class roles (bot-roles.ts), to compare.
 import { chooseAction, type BotLevel } from "../src/game/bot.js";
+import { flankOf } from "../src/game/combat.js";
 import { MAPS } from "../src/game/maps.js";
 import { streamFor } from "../src/game/rng.js";
 import { applyAction, newGame } from "../src/game/rules.js";
@@ -14,11 +16,12 @@ import type { Action, GameState, Unit, UnitKind } from "../src/game/types.js";
 const arg = (name: string) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split("=")[1];
 const games = Number(arg("games") ?? 20);
 const level = (arg("level") ?? "veteran") as BotLevel;
+const roles = !process.argv.includes("--plain");
 const maps = arg("maps") && arg("maps") !== "all" ? MAPS.filter((m) => arg("maps")!.split(",").includes(m.id)) : MAPS;
 const ROUND_CAP = 60;
 
-interface Row { bought: number; gold: number; dealt: number; friendly: number; kills: number; taken: number; deaths: number; lived: number; shots: number; hits: number; healed: number; captures: number }
-const rows = new Map<UnitKind, Row>(UNIT_KINDS.map((k) => [k, { bought: 0, gold: 0, dealt: 0, friendly: 0, kills: 0, taken: 0, deaths: 0, lived: 0, shots: 0, hits: 0, healed: 0, captures: 0 }]));
+interface Row { bought: number; gold: number; dealt: number; friendly: number; kills: number; taken: number; deaths: number; lived: number; shots: number; hits: number; healed: number; captures: number; rear: number }
+const rows = new Map<UnitKind, Row>(UNIT_KINDS.map((k) => [k, { bought: 0, gold: 0, dealt: 0, friendly: 0, kills: 0, taken: 0, deaths: 0, lived: 0, shots: 0, hits: 0, healed: 0, captures: 0, rear: 0 }]));
 
 for (const map of maps) {
   const seats = Math.min(map.seats, 2);
@@ -32,7 +35,7 @@ for (const map of maps) {
     while (state.phase !== "over" && state.round <= ROUND_CAP && seq < 20_000) {
       let acted = false;
       for (let seat = 0; seat < seats && state.phase !== "over"; seat++) {
-        const choice = chooseAction(viewFor(state, seat), random, level);
+        const choice = chooseAction(viewFor(state, seat), random, level, { roles });
         if (!choice) continue;
         const before = state;
         let r;
@@ -73,6 +76,8 @@ for (const map of maps) {
           const sr = rows.get(shooter.kind)!;
           sr.shots++;
           if (e.hit) sr.hits++;
+          const tgt = before.units.find((u) => u.id === e.targetId);
+          if (tgt && flankOf(e.from, tgt) === "rear") sr.rear++;
           const hurt = (victimId: number, seat: number, dmg: number, killed: boolean) => {
             const v = before.units.find((u) => u.id === victimId)!;
             const real = Math.min(dmg, Math.max(0, v.hp));
@@ -101,13 +106,13 @@ for (const map of maps) {
   }
 }
 
-console.log(`\n${games} games a map on ${maps.map((m) => m.id).join(", ")}, ${level} bots. Per 100 gold spent on the class:`);
-console.log("class      bought  gold   dmg/100g  kills/100g  friendly  hit%   taken/unit  rounds alive/unit  K:D");
+console.log(`\n${games} games a map on ${maps.map((m) => m.id).join(", ")}, ${level} bots${roles ? "" : " without roles"}. Per 100 gold spent on the class:`);
+console.log("class      bought  gold   dmg/100g  kills/100g  friendly  hit%   taken/unit  rounds alive/unit  K:D   rear%");
 for (const [k, r] of rows) {
   if (!r.bought) continue;
   const per = (n: number) => ((100 * n) / r.gold).toFixed(1);
   console.log(
-    `${k.padEnd(10)} ${String(r.bought).padStart(6)} ${String(r.gold).padStart(6)}  ${per(r.dealt).padStart(8)}  ${per(r.kills).padStart(10)}  ${String(r.friendly).padStart(8)}  ${r.shots ? String(Math.round((100 * r.hits) / r.shots)).padStart(3) : "  -"}%  ${(r.taken / r.bought).toFixed(0).padStart(10)}  ${(r.lived / r.bought).toFixed(1).padStart(17)}  ${(r.kills / Math.max(1, r.deaths)).toFixed(2).padStart(4)}`,
+    `${k.padEnd(10)} ${String(r.bought).padStart(6)} ${String(r.gold).padStart(6)}  ${per(r.dealt).padStart(8)}  ${per(r.kills).padStart(10)}  ${String(r.friendly).padStart(8)}  ${r.shots ? String(Math.round((100 * r.hits) / r.shots)).padStart(3) : "  -"}%  ${(r.taken / r.bought).toFixed(0).padStart(10)}  ${(r.lived / r.bought).toFixed(1).padStart(17)}  ${(r.kills / Math.max(1, r.deaths)).toFixed(2).padStart(4)}  ${r.shots ? String(Math.round((100 * r.rear) / r.shots)).padStart(4) : "   -"}%`,
   );
 }
 const h = rows.get("healer")!;

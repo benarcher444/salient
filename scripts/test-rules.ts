@@ -3,12 +3,12 @@
 // browser. Behaviour that looks odd but is deliberate is pinned here too, so a
 // later change cannot quietly "fix" it.
 //   npx tsx scripts/test-rules.ts
-import { facingToward, stepOpen } from "../src/game/grid.js";
+import { angleBetweenDeg, facingToward, stepOpen } from "../src/game/grid.js";
 import { traceLine } from "../src/game/los.js";
 import { MAPS, MapBuilder, getMap, registerMap, symmetryTransforms } from "../src/game/maps.js";
 import { checkMap } from "../src/game/mapcheck.js";
 import { pathTo, reachable, validatePath } from "../src/game/movement.js";
-import { damageRange, previewShot, rollShot, type ShotPreview } from "../src/game/combat.js";
+import { damageRange, flankOf, previewShot, rollShot, type ShotPreview } from "../src/game/combat.js";
 import { applyAction, isFacing, newGame, readyShooters, targetsFor, unitUpkeep, upkeepFor, validateOrders } from "../src/game/rules.js";
 import { streamFor } from "../src/game/rng.js";
 import { UNITS, UNIT_KINDS } from "../src/game/units.js";
@@ -1321,6 +1321,41 @@ section("Computer opponents: three levels, all legal, none cheating");
   focus.attackTurn = 0;
   const vShot = chooseAction(viewFor(focus, 0), streamFor("focus", 0), "veteran");
   check("a veteran shoots the wounded enemy first", vShot?.type === "attack" && vShot.targetId === 3, JSON.stringify(vShot));
+
+  // Class roles (bot-roles.ts): each class plays to its power, Regular and Veteran alike.
+  const planFor = (st: GameState, id: number, level: BotLevel, roles = true) => {
+    const a = chooseAction(viewFor(st, 0), streamFor("roles", 0), level, { roles });
+    const m = a?.type === "orders" ? a.orders.moves.find((x) => x.unitId === id) : undefined;
+    const u = st.units.find((x) => x.id === id)!;
+    const end = m?.path.length ? m.path[m.path.length - 1]! : { x: u.x, y: u.y };
+    return { end, facing: m?.facing ?? u.facing };
+  };
+  board("bot-roles", () => {}, 20, 12);
+  const screen = stateOn("bot-roles", [
+    unit(1, 0, "rifleman", 3, 5, { facing: E }),
+    unit(2, 0, "riot", 3, 3, { facing: E }),
+    unit(3, 1, "rifleman", 9, 5, { facing: W }),
+  ]);
+  for (const level of ["regular", "veteran"] as const) {
+    const r = planFor(screen, 2, level);
+    check(`a ${level} riot steps onto the enemy's line of fire at a friend, shield towards it`, r.end.y === 5 && r.end.x > 3 && r.end.x < 9 && angleBetweenDeg(r.facing, facingToward(r.end, { x: 9, y: 5 })) <= 30, JSON.stringify(r));
+  }
+  const stab = stateOn("bot-roles", [unit(1, 0, "commando", 9, 2, { facing: S }), unit(2, 1, "rifleman", 6, 5, { facing: W })]);
+  for (const level of ["regular", "veteran"] as const) {
+    const r = planFor(stab, 1, level);
+    const e = { x: 6, y: 5, facing: W };
+    check(`a ${level} commando gets behind its prey and faces it`, flankOf(r.end, e) === "rear" && Math.max(Math.abs(r.end.x - 6), Math.abs(r.end.y - 5)) <= 1 && angleBetweenDeg(r.facing, facingToward(r.end, e)) <= 1, JSON.stringify(r));
+  }
+  const plainStab = planFor(stab, 1, "veteran", false);
+  check("(without roles it didn't)", !(flankOf(plainStab.end, { x: 6, y: 5, facing: W }) === "rear" && Math.max(Math.abs(plainStab.end.x - 6), Math.abs(plainStab.end.y - 5)) <= 1), JSON.stringify(plainStab));
+  withTuning({ ...FILE_TUNING, rules: { ...FILE_TUNING.rules, healOnlyNearBase: 1 } }, () => {
+    // Seat 0's base is (0..1, 0..1); the enemy base is the far corner.
+    const hurt = stateOn("bot-roles", [unit(1, 0, "rifleman", 7, 6, { hp: 30 }), unit(2, 1, "rifleman", 18, 10, { facing: W })]);
+    const r = planFor(hurt, 1, "regular");
+    check("under heal-at-base a badly hurt unit heads home to heal", Math.max(r.end.x, r.end.y) < 6, JSON.stringify(r));
+    const fine = planFor(stateOn("bot-roles", [unit(1, 0, "rifleman", 7, 6), unit(2, 1, "rifleman", 18, 10, { facing: W })]), 1, "regular");
+    check("(a healthy one doesn't)", Math.max(fine.end.x, fine.end.y) >= 7, JSON.stringify(fine));
+  });
 }
 
 // ---------------------------------------------------------------------------

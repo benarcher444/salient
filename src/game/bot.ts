@@ -31,16 +31,19 @@
 //              it can best shoot. Buys to counter what it sees (shotguns and
 //              heavies against riots, commandos against snipers), keeps one
 //              engineer only while there is income it can reach safely.
-//              (Saving up to deploy in pairs, pulling the wounded back and
-//              keeping units from going forward alone were all tried in the
-//              simulator, and none of them won more games.)
-import { blastTiles, damageRange, isArmed, previewShot } from "./combat.js";
+//              (Saving up to deploy in pairs and keeping units from going
+//              forward alone were tried in the simulator, and won nothing.)
+// Regular and Veteran also play each class to its power (bot-roles.ts: riots
+// screen, commandos go round behind, snipers and heavies keep back, the
+// badly hurt go to be healed, at base under that house rule).
+import { blastTiles, damageRange, flankOf, isArmed, previewShot } from "./combat.js";
 import { RULES } from "./constants.js";
 import { DIRS, TERRAIN, distance, edgeAt, facingToward, inBounds, stepCost, stepOpen, terrainAt } from "./grid.js";
 import { getMap } from "./maps.js";
 import { pathTo, reachable } from "./movement.js";
+import { Roles, rearTile } from "./bot-roles.js";
 import { baseContested, targetsFor, validateOrders } from "./rules.js";
-import { UNITS, UNIT_KINDS, hasTrait } from "./units.js";
+import { UNITS, UNIT_KINDS, hasTrait, stealthRange } from "./units.js";
 import { baseTiles, spawnTiles } from "./visibility.js";
 import { stateFromView, type PlayerView } from "./view.js";
 import type { Facing, MapDef, MoveOrder, Orders, Point, SpawnOrder, Unit, UnitKind } from "./types.js";
@@ -103,18 +106,27 @@ const VETERAN_MIX: [UnitKind, number][] = [
  */
 const VETERAN = { offense: 0.9, danger: 0.4, company: 0.25, companyMax: 0.75 };
 
+/**
+ * Switches for the simulator's comparisons, never set in a real game:
+ * `roles: false` plays without the class roles (bot-roles.ts), the bot as it
+ * was before them.
+ */
+export interface BotOptions {
+  roles?: boolean;
+}
+
 /** Is it this seat's move, and if so what should it do? null = nothing to do. */
-export function chooseAction(view: PlayerView, random: () => number = Math.random, level: BotLevel = "regular"): BotAction | null {
+export function chooseAction(view: PlayerView, random: () => number = Math.random, level: BotLevel = "regular", opts: BotOptions = {}): BotAction | null {
   const seat = view.seat;
   if (seat === null || view.phase === "over" || view.seats[seat]?.eliminated) return null;
-  if (view.phase === "planning") return view.seats[seat]!.ready ? null : { type: "orders", orders: planOrders(view, random, level) };
-  if (view.attackTurn === seat) return chooseShot(view, random, level);
+  if (view.phase === "planning") return view.seats[seat]!.ready ? null : { type: "orders", orders: planOrders(view, random, level, opts) };
+  if (view.attackTurn === seat) return chooseShot(view, random, level, opts);
   return null;
 }
 
 // --- Planning ------------------------------------------------------------------------
 
-export function planOrders(view: PlayerView, random: () => number, level: BotLevel = "regular"): Orders {
+export function planOrders(view: PlayerView, random: () => number, level: BotLevel = "regular", opts: BotOptions = {}): Orders {
   const map = getMap(view.mapId);
   const state = stateFromView(view);
   const seat = view.seat!;
@@ -123,7 +135,18 @@ export function planOrders(view: PlayerView, random: () => number, level: BotLev
   const blocked = new Set(enemies.map((e) => e.y * map.width + e.x));
   const claimed = new Set<string>();
   const k = (p: Point) => `${p.x},${p.y}`;
-  const tactics = level === "veteran" ? new Tactics(map, view, mine, enemies) : null;
+  // Every level but Novice reads the ground (danger) for its class roles;
+  // only a Veteran weighs every tile by it.
+  const sense = level !== "novice" ? new Tactics(map, view, mine, enemies) : null;
+  const tactics = level === "veteran" ? sense : null;
+  const roles =
+    sense && opts.roles !== false
+      ? new Roles(map, view, state, mine, enemies, {
+          walk: (from, to) => walkDistance(map, from, to),
+          danger: (u, p) => sense.danger(u, p),
+          worth,
+        })
+      : null;
 
   // Sites still to take. A post we already own is done; the enemy's or a
   // neutral one is a target. Income sites matter to engineers only. Base
@@ -136,7 +159,7 @@ export function planOrders(view: PlayerView, random: () => number, level: BotLev
   const ownBase = bases.filter((_, i) => view.baseOwners[i] === seat);
   const enemyBase = centreOf(enemyBaseTiles);
   const on = (ps: Point[], u: Point) => ps.some((p) => p.x === u.x && p.y === u.y);
-  const facing = (u: Unit, at: Point, goal?: Point) => tactics?.bestFacing(u, at) ?? faceThreat(at, enemies, map, goal);
+  const facing = (u: Unit, at: Point, goal?: Point) => roles?.facing(u, at) ?? tactics?.bestFacing(u, at) ?? faceThreat(at, enemies, map, goal);
 
   const moves: MoveOrder[] = [];
   // Units already standing on a site they are taking stay put, and claim it.
@@ -172,7 +195,9 @@ export function planOrders(view: PlayerView, random: () => number, level: BotLev
   // must claim their tile first, so nobody plans to land on them.
   const movers = mine.filter((u) => !capturingIds.has(u.id));
   for (const u of movers) {
-    const goal = defending.get(u.id) ?? goalFor(map, u, { posts, income, lostBase, enemyBaseTiles }, enemies, enemyBase, claimed);
+    const defend = defending.get(u.id);
+    const usual = defend ?? goalFor(map, u, { posts, income, lostBase, enemyBaseTiles }, enemies, enemyBase, claimed);
+    const goal = roles && !defend ? roles.goal(u, usual, claimed) : usual;
     // A unit that fired last round may only turn. A novice's sometimes just stays.
     if (u.fired || (level === "novice" && random() < NOVICE.holdStill)) {
       claimed.add(k(u));
@@ -187,7 +212,7 @@ export function planOrders(view: PlayerView, random: () => number, level: BotLev
     const healing = level !== "novice" && hasTrait(u.kind, "medic");
     const care = (p: Point) =>
       healing ? mine.filter((o) => o.id !== u.id && Math.max(Math.abs(o.x - p.x), Math.abs(o.y - p.y)) <= RULES.medicRange).reduce((t, o) => t + Math.min(RULES.medicHeal, UNITS[o.kind].hp - o.hp), 0) / 4 : 0;
-    const score = (p: Point) => scoreTile(map, p, goal, enemies) + (tactics?.score(u, p) ?? 0) + care(p);
+    const score = (p: Point) => scoreTile(map, p, goal, enemies) + (tactics?.score(u, p) ?? 0) + care(p) + (roles?.score(u, p, goal) ?? 0);
     let best: Point = u;
     let bestScore = hasTrait(u.kind, "steady") && hasShot ? -Infinity : score(u);
     const noise = level === "novice" ? NOVICE.noise : 0.3;
@@ -349,6 +374,11 @@ class Tactics {
     if (cached !== undefined) return cached;
     const target: Unit = { ...u, x: p.x, y: p.y };
     let total = 0;
+    // A stealthy unit no enemy is close enough to spot can't be shot at.
+    if (hasTrait(u.kind, "stealth") && !this.enemies.some((e) => distance(e, p) <= stealthRange())) {
+      this.dangerCache.set(key, 0);
+      return 0;
+    }
     for (const e of this.enemies) {
       if (!isArmed(e.kind) || distance(e, p) > UNITS[e.kind].range) continue;
       // Facing it, it takes them from the front; they turn to it too.
@@ -478,7 +508,7 @@ function centreOf(points: Point[]): Point {
 
 // --- Shooting ---------------------------------------------------------------------------
 
-export function chooseShot(view: PlayerView, random: () => number = Math.random, level: BotLevel = "regular"): BotAction {
+export function chooseShot(view: PlayerView, random: () => number = Math.random, level: BotLevel = "regular", opts: BotOptions = {}): BotAction {
   const map = getMap(view.mapId);
   const state = stateFromView(view);
   // Enemies standing on base tiles we own are taking them: shoot those first.
@@ -487,6 +517,13 @@ export function chooseShot(view: PlayerView, random: () => number = Math.random,
   // A veteran minds its posts and income sites too.
   const ownSites = level === "veteran" ? [...map.posts.filter((_, i) => view.postOwners[i] === view.seat), ...map.income.filter((_, i) => view.incomeOwners[i] === view.seat)] : [];
   const standsOn = (ps: Point[], u: Point) => ps.some((b) => b.x === u.x && b.y === u.y);
+  // Could this unit reach an enemy's back next round?
+  const stabNext = (u: Unit) =>
+    view.units.some((e) => {
+      if (e.seat === view.seat) return false;
+      const r = rearTile(map, view.units, e);
+      return !!r && walkDistance(map, u, r) <= UNITS[u.kind].move;
+    });
   let best: { unitId: number; targetId: number; score: number } | null = null;
   const options: { unitId: number; targetId: number }[] = [];
   for (const id of view.readyShooters) {
@@ -500,6 +537,10 @@ export function chooseShot(view: PlayerView, random: () => number = Math.random,
       // skip the ones that will almost never land (a riot's shield, from the
       // front), unless the shell bursts anyway or the target is taking our base.
       if (p.chance < MIN_SHOT_CHANCE && p.splash === 0 && !raiding) continue;
+      // A commando playing its role (bot-roles.ts) saves itself for a back:
+      // firing pins it down next round, so a shot at a face that won't kill
+      // costs it the stab. It still fires at raiders.
+      if (level !== "novice" && opts.roles !== false && hasTrait(shooter.kind, "backstab") && flankOf(shooter, target) === "front" && !kills && !raiding && stabNext(shooter)) continue;
       let score =
         level === "veteran"
           ? veteranValue(p, target) * (raiding ? 3 : standsOn(ownSites, target) ? 1.5 : 1)
