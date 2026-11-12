@@ -55,6 +55,7 @@ export function adminRoutes(app: FastifyInstance) {
         map: live.map,
         tuning: live.tuning,
         players: live.players.map((p) => ({ seat: p.seat, name: p.name, isBot: p.isBot })),
+        botLevel: live.game.botLevel,
         status: live.game.status,
       },
     };

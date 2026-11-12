@@ -56,6 +56,7 @@ None of its code did.
 | `npm run delete-games -- --in-play` | Delete every unfinished game (or `-- <id>...`; `--dry-run` lists). Restart the server after |
 | `npm run fetch-game -- [latest\|<id>]` | Download a live game for review into `data/reviews/` (no argument lists recent games). Needs `ADMIN_TOKEN` in `.env` |
 | `npm run analyse-game -- <id> [--step=N]` | Replay a downloaded game: buys, matchups, hit rates, deaths, gold by round; `--step` details one replay step |
+| `npx tsx scripts/deep-review.ts <id>` | More on a downloaded game: each side's luck, income and upkeep, kills between sides, healer versus ordinary healing, base captures, seat 0's units one by one |
 | `npm run backup` | Consistent database copy into `data/backups/` |
 | `npm run db:generate` | Generate a migration after editing `src/db/schema.ts` |
 
